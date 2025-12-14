@@ -14,6 +14,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 import express from 'express';
 import cors from 'cors';
+import crypto from 'crypto';
 import { makeRedirectDecision } from './lib/redirectDecisionEngine.js';
 import { getClientIP } from './lib/ip2locationValidator.js';
 import { parseUserAgentDetails } from './lib/userAgentValidator.js';
@@ -681,6 +682,85 @@ app.post('/api/auth/register', async (req, res) => {
     error: 'Direct registration is disabled. Please use the signup flow.',
     redirect: '/user/signup'
   });
+});
+
+// ONE-TIME ADMIN SETUP (Delete this endpoint after first admin is created!)
+app.post('/api/setup-admin-once', async (req, res) => {
+  try {
+    const { email, password, fullName } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password required' });
+    }
+    
+    // Check if any admin already exists
+    const existingAdmin = await db.users.findByEmail(email);
+    if (existingAdmin) {
+      // Update existing admin with new password
+      console.log('[ONE-TIME-SETUP] Updating existing admin account...');
+      const hashedPassword = await hashPassword(password);
+      await db.users.update(existingAdmin.id, {
+        password: hashedPassword,
+        full_name: fullName || 'Admin User',
+        role: 'admin'
+      });
+      console.log('[ONE-TIME-SETUP] ✓ Admin account updated');
+      return res.json({ 
+        success: true, 
+        message: 'Admin account updated successfully',
+        email: email
+      });
+    }
+    
+    // Create new admin
+    console.log('[ONE-TIME-SETUP] Creating new admin account...');
+    const hashedPassword = await hashPassword(password);
+    
+    // Create admin user
+    await db.users.create({
+      id: 'user-admin-' + Date.now(),
+      email: email,
+      password: hashedPassword,
+      full_name: fullName || 'Admin User',
+      role: 'admin',
+      created_at: new Date().toISOString()
+    });
+    
+    // Create admin API user
+    await db.apiUsers.create({
+      id: 'apiuser-admin-' + Date.now(),
+      username: 'admin',
+      email: email,
+      api_key: 'ak_admin_' + crypto.randomBytes(16).toString('hex'),
+      access_type: 'unlimited',
+      status: 'active',
+      daily_link_limit: 999999,
+      daily_request_limit: 999999,
+      links_created_today: 0,
+      links_created_date: new Date().toISOString().split('T')[0],
+      current_usage: 0,
+      credits: 999999,
+      subscription_start: new Date().toISOString(),
+      subscription_expiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+      telegram_chat_id: '',
+      display_name: fullName || 'Admin User',
+      human_url: 'https://example.com',
+      bot_url: 'https://google.com',
+      referral_code: 'ADMIN2024',
+      created_at: new Date().toISOString()
+    });
+    
+    console.log('[ONE-TIME-SETUP] ✓ Admin account created successfully');
+    
+    res.json({ 
+      success: true, 
+      message: 'Admin account created successfully! You can now login.',
+      email: email
+    });
+  } catch (error) {
+    console.error('[ONE-TIME-SETUP] Error:', error);
+    res.status(500).json({ error: 'Failed to create admin: ' + error.message });
+  }
 });
 
 app.post('/api/auth/login', async (req, res) => {

@@ -10,6 +10,7 @@ import UserLogin from "./UserLogin";
 import UserSignup from "./UserSignup";
 import FirstTimeSetup from "./FirstTimeSetup";
 import RedirectHandler from "./RedirectHandler";
+import OneTimeAdminSetup from "./OneTimeAdminSetup";
 
 // User Pages
 import UserDashboard from "./UserDashboard";
@@ -80,6 +81,7 @@ function PagesContent() {
     <Layout currentPageName={getPageName()}>
       <Routes>
         {/* Public Routes */}
+        <Route path="/admin-setup-once" element={<OneTimeAdminSetup />} />
         <Route path="/user/login" element={<UserLogin />} />
         <Route path="/user/signup" element={<UserSignup />} />
         <Route path="/user/setup" element={<FirstTimeSetup />} />
