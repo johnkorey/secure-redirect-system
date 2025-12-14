@@ -1,5 +1,15 @@
--- Clean Database Script
--- Drops all existing tables and recreates them fresh
+-- ⚠️⚠️⚠️ MANUAL DATABASE CLEANUP SCRIPT ⚠️⚠️⚠️
+-- 
+-- WARNING: THIS WILL DELETE ALL DATA!
+-- 
+-- This script is for MANUAL use only (e.g., fixing schema conflicts during development)
+-- DO NOT run this automatically on server startup!
+-- DO NOT use in production unless you want to lose all data!
+--
+-- To use: Connect to your database manually and run this script
+-- Then restart your server to recreate tables
+--
+-- ⚠️⚠️⚠️ YOU HAVE BEEN WARNED ⚠️⚠️⚠️
 
 -- Drop all tables (in reverse order of dependencies)
 DROP TABLE IF EXISTS companion_domains CASCADE;

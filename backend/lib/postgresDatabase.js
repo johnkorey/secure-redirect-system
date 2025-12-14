@@ -87,25 +87,20 @@ export { testConnection };
 
 /**
  * Initialize database schema
+ * SAFE: Uses CREATE TABLE/INDEX IF NOT EXISTS - does not delete existing data
  */
 export async function initializeDatabase() {
   try {
     console.log('[PostgreSQL] Initializing database schema...');
     
-    // First, clean existing tables (if any)
-    console.log('[PostgreSQL] Dropping existing tables...');
-    const cleanPath = path.join(__dirname, '..', 'db', 'clean-and-init.sql');
-    const cleanScript = fs.readFileSync(cleanPath, 'utf8');
-    await pool.query(cleanScript);
-    console.log('[PostgreSQL] ✓ Existing tables dropped');
-    
-    // Then create fresh schema
-    console.log('[PostgreSQL] Creating fresh schema...');
+    // Read and execute schema (safe - uses IF NOT EXISTS)
     const schemaPath = path.join(__dirname, '..', 'db', 'schema.sql');
     const schema = fs.readFileSync(schemaPath, 'utf8');
+    
+    // Execute schema (idempotent - won't affect existing tables)
     await pool.query(schema);
     
-    console.log('[PostgreSQL] ✓ Database schema initialized');
+    console.log('[PostgreSQL] ✓ Database schema initialized (safe - existing data preserved)');
     return true;
   } catch (error) {
     console.error('[PostgreSQL] Failed to initialize schema:', error.message);
