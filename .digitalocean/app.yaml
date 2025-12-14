@@ -4,15 +4,8 @@
 name: secure-redirect-system
 region: nyc
 
-# Database Configuration
-databases:
-  - name: secure-redirect-db
-    engine: PG
-    version: "16"
-    production: true
-    cluster_name: secure-redirect-postgres
-
 # Service Configuration
+# Note: Using external DigitalOcean PostgreSQL database (credentials in envs below)
 services:
   - name: web
     # Source configuration
@@ -55,16 +48,34 @@ services:
         value: "3001"
         scope: RUN_TIME
       
-      # JWT Secret - SET THIS IN DIGITALOCEAN DASHBOARD!
+      # JWT Secret
       - key: JWT_SECRET
-        value: "change-this-to-a-secure-random-string-min-32-characters"
+        value: "7k9mP2xQ5vR8wT1nY4bF6hJ0sL3zA9cV5eX7dW2gM4pK8uN1qR6tY0"
         type: SECRET
         scope: RUN_TIME
       
-      # Database (auto-injected by DigitalOcean)
-      - key: DATABASE_URL
-        value: ${secure-redirect-db.DATABASE_URL}
+      # External PostgreSQL Database (DigitalOcean Managed)
+      - key: DB_HOST
+        value: "db-postgresql-nyc3-33866-do-user-30454917-0.k.db.ondigitalocean.com"
+        type: SECRET
         scope: RUN_TIME
+      
+      - key: DB_PORT
+        value: "25060"
+        scope: RUN_TIME
+      
+      - key: DB_NAME
+        value: "defaultdb"
+        scope: RUN_TIME
+      
+      - key: DB_USER
+        value: "doadmin"
+        scope: RUN_TIME
+      
+      # DB_PASSWORD: Add this manually in DigitalOcean dashboard
+      # Go to: Settings → seal-app → Environment Variables → Edit
+      # Add: DB_PASSWORD = (your database password from connection details)
+      # Make sure to check "Encrypt" checkbox!
       
       - key: DB_SSL
         value: "true"
