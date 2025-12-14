@@ -676,12 +676,12 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password required' });
     }
 
-    const user = db.users.findByEmail(email.toLowerCase());
+    const user = await db.users.findByEmail(email.toLowerCase());
     if (!user || !(await comparePassword(password, user.password))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const apiUser = db.apiUsers.findByEmail(email.toLowerCase());
+    const apiUser = await db.apiUsers.findByEmail(email.toLowerCase());
 
     const token = generateToken({ id: user.id, email: user.email, role: user.role, apiUserId: apiUser?.id });
     const { password: _, ...userWithoutPassword } = user;

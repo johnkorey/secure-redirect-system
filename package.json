@@ -11,6 +11,7 @@
     "start": "NODE_ENV=production node backend/server.js",
     "start:migrate": "node backend/migrate-to-postgres.js && npm start",
     "migrate": "node backend/migrate-to-postgres.js",
+    "create-admin": "node create-admin-once.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },
