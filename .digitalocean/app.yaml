@@ -22,7 +22,7 @@ services:
       deploy_on_push: true
 
     # Build configuration
-    build_command: npm install && npm run build
+    build_command: npm install && cd backend && npm install && cd .. && npm run build
     
     # Run configuration
     run_command: npm start
