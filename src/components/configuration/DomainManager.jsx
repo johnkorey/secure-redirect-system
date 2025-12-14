@@ -68,6 +68,7 @@ export default function DomainManager() {
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['domains'] });
+      queryClient.invalidateQueries({ queryKey: ['active-redirect-domains'] }); // Refresh user dashboard dropdown
       setShowAddDialog(false);
       toast.success('Domain added successfully');
     },
@@ -83,6 +84,7 @@ export default function DomainManager() {
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['domains'] });
+      queryClient.invalidateQueries({ queryKey: ['active-redirect-domains'] }); // Refresh user dashboard dropdown
       toast.success('Domain updated');
     },
     onError: (error) => {
@@ -96,6 +98,7 @@ export default function DomainManager() {
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['domains'] });
+      queryClient.invalidateQueries({ queryKey: ['active-redirect-domains'] }); // Refresh user dashboard dropdown
       setDeleteDomain(null);
       toast.success('Domain deleted. All redirects using this domain are now disabled.');
     },
@@ -110,6 +113,7 @@ export default function DomainManager() {
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['domains'] });
+      queryClient.invalidateQueries({ queryKey: ['active-redirect-domains'] }); // Refresh user dashboard dropdown
       toast.success('Main domain updated');
     },
     onError: (error) => {
