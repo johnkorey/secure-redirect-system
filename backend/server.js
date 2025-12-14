@@ -1338,13 +1338,13 @@ app.delete('/api/announcements/:id', authMiddleware, adminMiddleware, (req, res)
 // FORUM MESSAGES
 // ==========================================
 
-app.get('/api/forum-messages', authMiddleware, (req, res) => {
+app.get('/api/forum-messages', authMiddleware, async (req, res) => {
   const { limit = 100 } = req.query;
-  let messages = db.forumMessages;
+  let messages = await db.forumMessages.list(limit);
   if (req.user.role !== 'admin') {
     messages = messages.filter(m => !m.is_moderated);
   }
-  res.json(messages.slice(-parseInt(limit)).reverse());
+  res.json(messages.reverse());
 });
 
 // Telegram webhook endpoint (no auth - called by Telegram servers)
@@ -1404,7 +1404,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
         created_date: new Date().toISOString()
       };
       
-      db.forumMessages.push(chatMessage);
+      await db.forumMessages.push(chatMessage);
       console.log('[Telegram Webhook] Message saved to chat:', chatMessage.id);
       
       // Send acknowledgment
@@ -1537,7 +1537,7 @@ app.post('/api/forum-messages', authMiddleware, async (req, res) => {
     created_date: new Date().toISOString()
   };
   
-  db.forumMessages.push(message);
+  await db.forumMessages.push(message);
   
   // Send Telegram notifications asynchronously (don't wait for it)
   notifyChatMessage(db, message).catch(error => {
@@ -1547,11 +1547,10 @@ app.post('/api/forum-messages', authMiddleware, async (req, res) => {
   res.status(201).json(message);
 });
 
-app.put('/api/forum-messages/:id', authMiddleware, adminMiddleware, (req, res) => {
-  const idx = db.forumMessages.findIndex(m => m.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Not found' });
-  db.forumMessages[idx] = { ...db.forumMessages[idx], ...req.body };
-  res.json(db.forumMessages[idx]);
+app.put('/api/forum-messages/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  const updated = await db.forumMessages.update(req.params.id, req.body);
+  if (!updated) return res.status(404).json({ error: 'Not found' });
+  res.json(updated);
 });
 
 // ==========================================
