@@ -1244,23 +1244,25 @@ app.delete('/api/hosted-links/:id', authMiddleware, (req, res) => {
 // VISITOR LOGS
 // ==========================================
 
-app.get('/api/visitors', authMiddleware, (req, res) => {
+app.get('/api/visitors', authMiddleware, async (req, res) => {
   const { limit = 100 } = req.query;
   const isAdmin = req.user.role === 'admin';
   // Get all logs as array first
-  const allLogs = db.visitorLogs.filter(() => true);
-  let logs = isAdmin ? allLogs : allLogs.filter(l => l.user_id === req.user.id);
+  let logs = await db.visitorLogs.getAll();
+  if (!isAdmin) {
+    logs = logs.filter(l => l.user_id === req.user.id);
+  }
   res.json(logs.slice(-parseInt(limit)).reverse());
 });
 
-app.post('/api/visitors', authMiddleware, (req, res) => {
+app.post('/api/visitors', authMiddleware, async (req, res) => {
   const log = {
     id: generateId('log'),
     user_id: req.user.id,
     ...req.body,
     created_date: new Date().toISOString()
   };
-  db.visitorLogs.push(log);
+  await db.visitorLogs.push(log);
   res.status(201).json(log);
 });
 
@@ -1268,10 +1270,13 @@ app.post('/api/visitors', authMiddleware, (req, res) => {
 // REALTIME EVENTS
 // ==========================================
 
-app.get('/api/realtime-events', authMiddleware, (req, res) => {
+app.get('/api/realtime-events', authMiddleware, async (req, res) => {
   const { limit = 50 } = req.query;
   const isAdmin = req.user.role === 'admin';
-  let events = isAdmin ? db.realtimeEvents : db.realtimeEvents.filter(e => e.user_id === req.user.id);
+  let events = await db.realtimeEvents.getAll();
+  if (!isAdmin) {
+    events = events.filter(e => e.user_id === req.user.id);
+  }
   res.json(events.slice(-parseInt(limit)).reverse());
 });
 
@@ -2242,10 +2247,11 @@ app.get('/api/user/captured-emails', authMiddleware, (req, res) => {
 // USER METRICS
 // ==========================================
 
-app.get('/api/user/metrics', authMiddleware, (req, res) => {
+app.get('/api/user/metrics', authMiddleware, async (req, res) => {
   const { hours = 24 } = req.query;
   const since = new Date(Date.now() - parseInt(hours) * 60 * 60 * 1000);
-  const userLogs = db.visitorLogs.filter(l => 
+  const allLogs = await db.visitorLogs.getAll();
+  const userLogs = allLogs.filter(l => 
     l.user_id === req.user.id && new Date(l.created_date || l.visit_timestamp) > since
   );
   
@@ -2258,8 +2264,9 @@ app.get('/api/user/metrics', authMiddleware, (req, res) => {
   });
 });
 
-app.get('/api/user/trends', authMiddleware, (req, res) => {
-  const userLogs = db.visitorLogs.filter(l => l.user_id === req.user.id);
+app.get('/api/user/trends', authMiddleware, async (req, res) => {
+  const allLogs = await db.visitorLogs.getAll();
+  const userLogs = allLogs.filter(l => l.user_id === req.user.id);
   
   // Group by hour for last 24 hours
   const hourlyData = Array.from({ length: 24 }, (_, i) => {
@@ -2284,9 +2291,10 @@ app.get('/api/user/trends', authMiddleware, (req, res) => {
   res.json(hourlyData);
 });
 
-app.get('/api/user/recent-activity', authMiddleware, (req, res) => {
+app.get('/api/user/recent-activity', authMiddleware, async (req, res) => {
   const { limit = 50, visitorType } = req.query;
-  let logs = db.visitorLogs.filter(l => l.user_id === req.user.id);
+  const allLogs = await db.visitorLogs.getAll();
+  let logs = allLogs.filter(l => l.user_id === req.user.id);
   if (visitorType && visitorType !== 'all') {
     logs = logs.filter(l => l.classification === visitorType.toUpperCase());
   }
