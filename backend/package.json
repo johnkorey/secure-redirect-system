@@ -1,0 +1,20 @@
+{
+  "name": "secure-redirect-backend",
+  "version": "1.0.0",
+  "description": "Backend server for secure redirect system with bot detection",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.9.7",
+    "ua-parser-js": "^1.0.37"
+  }
+}
