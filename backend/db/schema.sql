@@ -370,12 +370,14 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger for system_configs
+DROP TRIGGER IF EXISTS trigger_system_configs_updated_at ON system_configs;
 CREATE TRIGGER trigger_system_configs_updated_at
 BEFORE UPDATE ON system_configs
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at();
 
 -- Trigger for domains
+DROP TRIGGER IF EXISTS trigger_domains_updated_at ON domains;
 CREATE TRIGGER trigger_domains_updated_at
 BEFORE UPDATE ON domains
 FOR EACH ROW
