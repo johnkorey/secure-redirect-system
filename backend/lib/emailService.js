@@ -8,18 +8,17 @@ import FormData from 'form-data';
 /**
  * Get Mailgun config from database configs
  */
-export function getMailgunConfig(systemConfigs) {
-  const getConfig = (key) => {
-    const config = Array.from(systemConfigs.values()).find(c => c.config_key === key);
-    return config?.config_value || '';
+export async function getMailgunConfig(systemConfigs) {
+  const getConfig = async (key) => {
+    return await systemConfigs.getValue(key);
   };
 
   return {
-    mailgun_api_key: getConfig('mailgun_api_key') || process.env.MAILGUN_API_KEY || '',
-    mailgun_domain: getConfig('mailgun_domain') || process.env.MAILGUN_DOMAIN || '',
-    mailgun_from_email: getConfig('mailgun_from_email') || 'noreply@example.com',
-    mailgun_from_name: getConfig('mailgun_from_name') || 'Secure Redirect',
-    mailgun_region: getConfig('mailgun_region') || 'us' // 'us' or 'eu'
+    mailgun_api_key: await getConfig('mailgun_api_key') || process.env.MAILGUN_API_KEY || '',
+    mailgun_domain: await getConfig('mailgun_domain') || process.env.MAILGUN_DOMAIN || '',
+    mailgun_from_email: await getConfig('mailgun_from_email') || 'noreply@example.com',
+    mailgun_from_name: await getConfig('mailgun_from_name') || 'Secure Redirect',
+    mailgun_region: await getConfig('mailgun_region') || 'us' // 'us' or 'eu'
   };
 }
 

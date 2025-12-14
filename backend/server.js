@@ -71,18 +71,19 @@ const defaultSystemConfig = {
 };
 
 // Helper to get config value from database
-function getConfigValue(key, defaultValue = '') {
-  return db.systemConfigs.getValue(key, defaultValue);
+async function getConfigValue(key, defaultValue = '') {
+  const value = await db.systemConfigs.getValue(key);
+  return value || defaultValue;
 }
 
 // Helper to get Mailgun config from database
-function getMailgunConfig() {
+async function getMailgunConfig() {
   return {
-    mailgun_api_key: getConfigValue('mailgun_api_key'),
-    mailgun_domain: getConfigValue('mailgun_domain'),
-    mailgun_from_email: getConfigValue('mailgun_from_email', 'noreply@example.com'),
-    mailgun_from_name: getConfigValue('mailgun_from_name', 'Secure Redirect'),
-    mailgun_region: getConfigValue('mailgun_region', 'us')
+    mailgun_api_key: await getConfigValue('mailgun_api_key'),
+    mailgun_domain: await getConfigValue('mailgun_domain'),
+    mailgun_from_email: await getConfigValue('mailgun_from_email', 'noreply@example.com'),
+    mailgun_from_name: await getConfigValue('mailgun_from_name', 'Secure Redirect'),
+    mailgun_region: await getConfigValue('mailgun_region', 'us')
   };
 }
 
@@ -258,7 +259,7 @@ app.post('/api/user/signup', async (req, res) => {
     await db.signupSessions.create(session);
 
     // Send verification email
-    const mailgunConfig = getMailgunConfig();
+    const mailgunConfig = await getMailgunConfig();
     const emailResult = await sendVerificationEmail(email, verificationCode, mailgunConfig);
 
     console.log(`[SIGNUP] Session created: ${sessionId}, Code: ${verificationCode}`);
@@ -330,7 +331,7 @@ app.post('/api/user/resend-code', async (req, res) => {
     });
 
     // Send new verification email
-    const mailgunConfig = getMailgunConfig();
+    const mailgunConfig = await getMailgunConfig();
     const emailResult = await sendVerificationEmail(session.email, verificationCode, mailgunConfig);
 
     res.json({
@@ -454,13 +455,13 @@ app.post('/api/user/complete-signup', async (req, res) => {
     });
 
     // Send confirmation email
-    const mailgunConfig = getMailgunConfig();
+    const mailgunConfig = await getMailgunConfig();
     await sendPaymentConfirmationEmail(session.email, {
       accessType: session.access_type,
       dailyLinkLimit: pricing.dailyLinkLimit,
       expiryDate: expiryDate.toLocaleDateString(),
       apiKey
-    }, smtpConfig);
+    }, mailgunConfig);
 
     // Generate login token
     const token = generateToken({ id: user.id, email: user.email, role: user.role, apiUserId: apiUser.id });
@@ -648,14 +649,14 @@ app.post('/api/user/complete-renewal', authMiddleware, async (req, res) => {
 
     // Send confirmation email if Mailgun configured
     try {
-      const mailgunConfig = getMailgunConfig();
+      const mailgunConfig = await getMailgunConfig();
       if (mailgunConfig.mailgun_api_key) {
         await sendPaymentConfirmationEmail(session.email, {
           accessType: session.access_type,
           dailyLinkLimit: pricing.dailyLinkLimit,
           expiryDate: expiryDate.toLocaleDateString(),
           type: 'renewal'
-        }, smtpConfig);
+        }, mailgunConfig);
       }
     } catch (emailError) {
       console.warn('[RENEWAL] Email notification failed:', emailError.message);
@@ -1878,35 +1879,22 @@ app.put('/api/system-config', authMiddleware, adminMiddleware, (req, res) => {
 // ==========================================
 
 // List all system configs
-app.get('/api/system-configs', authMiddleware, adminMiddleware, (req, res) => {
-  const configs = Array.from(db.systemConfigs.values());
+app.get('/api/system-configs', authMiddleware, adminMiddleware, async (req, res) => {
+  const configs = await db.systemConfigs.list();
   res.json(configs);
 });
 
 // Create a system config
-app.post('/api/system-configs', authMiddleware, adminMiddleware, (req, res) => {
+app.post('/api/system-configs', authMiddleware, adminMiddleware, async (req, res) => {
   const { config_key, config_value, config_type } = req.body;
   
-  // Check if key already exists
-  const existing = Array.from(db.systemConfigs.values()).find(c => c.config_key === config_key);
-  if (existing) {
-    // Update existing
-    existing.config_value = config_value;
-    existing.updated_at = new Date().toISOString();
-    db.systemConfigs.set(existing.id, existing);
-    return res.json(existing);
-  }
+  // Use setValue which handles insert/update automatically
+  await db.systemConfigs.setValue(config_key, config_value, config_type || 'general');
   
-  const id = `config-${Date.now()}`;
-  const config = {
-    id,
-    config_key,
-    config_value,
-    config_type: config_type || 'general',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  };
-  db.systemConfigs.set(id, config);
+  // Fetch and return the config
+  const configs = await db.systemConfigs.list();
+  const config = configs.find(c => c.config_key === config_key);
+  
   res.status(201).json(config);
 });
 

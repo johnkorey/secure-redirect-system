@@ -6,14 +6,13 @@
 /**
  * Get Mailgun API configuration
  */
-function getMailgunApiConfig(systemConfigs) {
-  const getConfig = (key) => {
-    const config = Array.from(systemConfigs.values()).find(c => c.config_key === key);
-    return config?.config_value || '';
+async function getMailgunApiConfig(systemConfigs) {
+  const getConfig = async (key) => {
+    return await systemConfigs.getValue(key);
   };
 
-  const apiKey = getConfig('mailgun_api_key') || process.env.MAILGUN_API_KEY || '';
-  const region = getConfig('mailgun_region') || 'us';
+  const apiKey = await getConfig('mailgun_api_key') || process.env.MAILGUN_API_KEY || '';
+  const region = await getConfig('mailgun_region') || 'us';
   
   return {
     apiKey,
@@ -53,7 +52,7 @@ async function mailgunRequest(endpoint, method = 'GET', body = null, apiKey, bas
  * List all domains
  */
 export async function listDomains(systemConfigs) {
-  const { apiKey, baseUrl } = getMailgunApiConfig(systemConfigs);
+  const { apiKey, baseUrl } = await getMailgunApiConfig(systemConfigs);
   
   if (!apiKey) {
     throw new Error('Mailgun API key not configured');
@@ -66,7 +65,7 @@ export async function listDomains(systemConfigs) {
  * Get domain details
  */
 export async function getDomain(domainName, systemConfigs) {
-  const { apiKey, baseUrl } = getMailgunApiConfig(systemConfigs);
+  const { apiKey, baseUrl } = await getMailgunApiConfig(systemConfigs);
   
   if (!apiKey) {
     throw new Error('Mailgun API key not configured');
@@ -79,7 +78,7 @@ export async function getDomain(domainName, systemConfigs) {
  * Add a new domain
  */
 export async function addDomain(domainName, systemConfigs, options = {}) {
-  const { apiKey, baseUrl } = getMailgunApiConfig(systemConfigs);
+  const { apiKey, baseUrl } = await getMailgunApiConfig(systemConfigs);
   
   if (!apiKey) {
     throw new Error('Mailgun API key not configured');
@@ -132,7 +131,7 @@ export async function addDomain(domainName, systemConfigs, options = {}) {
  * Delete a domain
  */
 export async function deleteDomain(domainName, systemConfigs) {
-  const { apiKey, baseUrl } = getMailgunApiConfig(systemConfigs);
+  const { apiKey, baseUrl } = await getMailgunApiConfig(systemConfigs);
   
   if (!apiKey) {
     throw new Error('Mailgun API key not configured');
@@ -158,7 +157,7 @@ export async function deleteDomain(domainName, systemConfigs) {
  * Verify domain
  */
 export async function verifyDomain(domainName, systemConfigs) {
-  const { apiKey, baseUrl } = getMailgunApiConfig(systemConfigs);
+  const { apiKey, baseUrl } = await getMailgunApiConfig(systemConfigs);
   
   if (!apiKey) {
     throw new Error('Mailgun API key not configured');
@@ -184,7 +183,7 @@ export async function verifyDomain(domainName, systemConfigs) {
  * Get domain connection settings (SMTP credentials)
  */
 export async function getDomainConnection(domainName, systemConfigs) {
-  const { apiKey, baseUrl } = getMailgunApiConfig(systemConfigs);
+  const { apiKey, baseUrl } = await getMailgunApiConfig(systemConfigs);
   
   if (!apiKey) {
     throw new Error('Mailgun API key not configured');
@@ -197,7 +196,7 @@ export async function getDomainConnection(domainName, systemConfigs) {
  * Update domain connection settings
  */
 export async function updateDomainConnection(domainName, settings, systemConfigs) {
-  const { apiKey, baseUrl } = getMailgunApiConfig(systemConfigs);
+  const { apiKey, baseUrl } = await getMailgunApiConfig(systemConfigs);
   
   if (!apiKey) {
     throw new Error('Mailgun API key not configured');
@@ -236,7 +235,7 @@ export async function updateDomainConnection(domainName, settings, systemConfigs
  * Get domain tracking settings
  */
 export async function getTrackingSettings(domainName, systemConfigs) {
-  const { apiKey, baseUrl } = getMailgunApiConfig(systemConfigs);
+  const { apiKey, baseUrl } = await getMailgunApiConfig(systemConfigs);
   
   if (!apiKey) {
     throw new Error('Mailgun API key not configured');
@@ -249,7 +248,7 @@ export async function getTrackingSettings(domainName, systemConfigs) {
  * Update domain tracking settings
  */
 export async function updateTrackingSettings(domainName, settings, systemConfigs) {
-  const { apiKey, baseUrl } = getMailgunApiConfig(systemConfigs);
+  const { apiKey, baseUrl } = await getMailgunApiConfig(systemConfigs);
   
   if (!apiKey) {
     throw new Error('Mailgun API key not configured');
@@ -292,7 +291,7 @@ export async function updateTrackingSettings(domainName, settings, systemConfigs
  * Get account info
  */
 export async function getAccountInfo(systemConfigs) {
-  const { apiKey, baseUrl } = getMailgunApiConfig(systemConfigs);
+  const { apiKey, baseUrl } = await getMailgunApiConfig(systemConfigs);
   
   if (!apiKey) {
     throw new Error('Mailgun API key not configured');
