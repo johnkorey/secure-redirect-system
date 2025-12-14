@@ -13,8 +13,8 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 
 -- ==========================================
 -- API USERS TABLE
@@ -41,10 +41,10 @@ CREATE TABLE IF NOT EXISTS api_users (
   FOREIGN KEY (email) REFERENCES users(email) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_api_users_email ON api_users(email);
-CREATE INDEX idx_api_users_api_key ON api_users(api_key);
-CREATE INDEX idx_api_users_status ON api_users(status);
-CREATE INDEX idx_api_users_telegram ON api_users(telegram_chat_id);
+CREATE INDEX IF NOT EXISTS idx_api_users_email ON api_users(email);
+CREATE INDEX IF NOT EXISTS idx_api_users_api_key ON api_users(api_key);
+CREATE INDEX IF NOT EXISTS idx_api_users_status ON api_users(status);
+CREATE INDEX IF NOT EXISTS idx_api_users_telegram ON api_users(telegram_chat_id);
 
 -- ==========================================
 -- REDIRECTS TABLE
@@ -67,10 +67,10 @@ CREATE TABLE IF NOT EXISTS redirects (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_redirects_user_id ON redirects(user_id);
-CREATE INDEX idx_redirects_public_id ON redirects(public_id);
-CREATE INDEX idx_redirects_domain_id ON redirects(domain_id);
-CREATE INDEX idx_redirects_enabled ON redirects(is_enabled);
+CREATE INDEX IF NOT EXISTS idx_redirects_user_id ON redirects(user_id);
+CREATE INDEX IF NOT EXISTS idx_redirects_public_id ON redirects(public_id);
+CREATE INDEX IF NOT EXISTS idx_redirects_domain_id ON redirects(domain_id);
+CREATE INDEX IF NOT EXISTS idx_redirects_enabled ON redirects(is_enabled);
 
 -- ==========================================
 -- VISITOR LOGS TABLE
@@ -98,12 +98,12 @@ CREATE TABLE IF NOT EXISTS visitor_logs (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_visitor_logs_redirect_id ON visitor_logs(redirect_id);
-CREATE INDEX idx_visitor_logs_user_id ON visitor_logs(user_id);
-CREATE INDEX idx_visitor_logs_ip ON visitor_logs(ip_address);
-CREATE INDEX idx_visitor_logs_classification ON visitor_logs(classification);
-CREATE INDEX idx_visitor_logs_created_date ON visitor_logs(created_date DESC);
-CREATE INDEX idx_visitor_logs_visit_timestamp ON visitor_logs(visit_timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_visitor_logs_redirect_id ON visitor_logs(redirect_id);
+CREATE INDEX IF NOT EXISTS idx_visitor_logs_user_id ON visitor_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_visitor_logs_ip ON visitor_logs(ip_address);
+CREATE INDEX IF NOT EXISTS idx_visitor_logs_classification ON visitor_logs(classification);
+CREATE INDEX IF NOT EXISTS idx_visitor_logs_created_date ON visitor_logs(created_date DESC);
+CREATE INDEX IF NOT EXISTS idx_visitor_logs_visit_timestamp ON visitor_logs(visit_timestamp DESC);
 
 -- ==========================================
 -- REALTIME EVENTS TABLE
@@ -124,9 +124,9 @@ CREATE TABLE IF NOT EXISTS realtime_events (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_realtime_events_created_date ON realtime_events(created_date DESC);
-CREATE INDEX idx_realtime_events_visitor_type ON realtime_events(visitor_type);
-CREATE INDEX idx_realtime_events_user_id ON realtime_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_realtime_events_created_date ON realtime_events(created_date DESC);
+CREATE INDEX IF NOT EXISTS idx_realtime_events_visitor_type ON realtime_events(visitor_type);
+CREATE INDEX IF NOT EXISTS idx_realtime_events_user_id ON realtime_events(user_id);
 
 -- Auto-cleanup old realtime events (keep last 1000)
 CREATE OR REPLACE FUNCTION cleanup_realtime_events() RETURNS void AS $$
@@ -154,9 +154,9 @@ CREATE TABLE IF NOT EXISTS domains (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_domains_type ON domains(domain_type);
-CREATE INDEX idx_domains_active ON domains(is_active);
-CREATE INDEX idx_domains_main ON domains(is_main);
+CREATE INDEX IF NOT EXISTS idx_domains_type ON domains(domain_type);
+CREATE INDEX IF NOT EXISTS idx_domains_active ON domains(is_active);
+CREATE INDEX IF NOT EXISTS idx_domains_main ON domains(is_main);
 
 -- ==========================================
 -- COMPANION DOMAINS TABLE
@@ -175,8 +175,8 @@ CREATE TABLE IF NOT EXISTS companion_domains (
   last_used_at TIMESTAMP
 );
 
-CREATE INDEX idx_companion_domains_status ON companion_domains(status);
-CREATE INDEX idx_companion_domains_verified ON companion_domains(is_verified);
+CREATE INDEX IF NOT EXISTS idx_companion_domains_status ON companion_domains(status);
+CREATE INDEX IF NOT EXISTS idx_companion_domains_verified ON companion_domains(is_verified);
 
 -- ==========================================
 -- CAPTURED EMAILS TABLE
@@ -200,10 +200,10 @@ CREATE TABLE IF NOT EXISTS captured_emails (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_captured_emails_email ON captured_emails(email);
-CREATE INDEX idx_captured_emails_redirect_id ON captured_emails(redirect_id);
-CREATE INDEX idx_captured_emails_user_id ON captured_emails(user_id);
-CREATE INDEX idx_captured_emails_captured_at ON captured_emails(captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_captured_emails_email ON captured_emails(email);
+CREATE INDEX IF NOT EXISTS idx_captured_emails_redirect_id ON captured_emails(redirect_id);
+CREATE INDEX IF NOT EXISTS idx_captured_emails_user_id ON captured_emails(user_id);
+CREATE INDEX IF NOT EXISTS idx_captured_emails_captured_at ON captured_emails(captured_at DESC);
 
 -- ==========================================
 -- PAYMENTS TABLE
@@ -223,9 +223,9 @@ CREATE TABLE IF NOT EXISTS payments (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_payments_user_email ON payments(user_email);
-CREATE INDEX idx_payments_status ON payments(status);
-CREATE INDEX idx_payments_transaction_hash ON payments(transaction_hash);
+CREATE INDEX IF NOT EXISTS idx_payments_user_email ON payments(user_email);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+CREATE INDEX IF NOT EXISTS idx_payments_transaction_hash ON payments(transaction_hash);
 
 -- ==========================================
 -- SIGNUP SESSIONS TABLE
@@ -242,9 +242,9 @@ CREATE TABLE IF NOT EXISTS signup_sessions (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_signup_sessions_email ON signup_sessions(email);
-CREATE INDEX idx_signup_sessions_code ON signup_sessions(verification_code);
-CREATE INDEX idx_signup_sessions_expires ON signup_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_signup_sessions_email ON signup_sessions(email);
+CREATE INDEX IF NOT EXISTS idx_signup_sessions_code ON signup_sessions(verification_code);
+CREATE INDEX IF NOT EXISTS idx_signup_sessions_expires ON signup_sessions(expires_at);
 
 -- ==========================================
 -- CHAT MESSAGES TABLE
@@ -266,9 +266,9 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_chat_messages_user_id ON chat_messages(user_id);
-CREATE INDEX idx_chat_messages_created_at ON chat_messages(created_at DESC);
-CREATE INDEX idx_chat_messages_telegram_chat_id ON chat_messages(telegram_chat_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_user_id ON chat_messages(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_telegram_chat_id ON chat_messages(telegram_chat_id);
 
 -- ==========================================
 -- ANNOUNCEMENTS TABLE
@@ -282,8 +282,8 @@ CREATE TABLE IF NOT EXISTS announcements (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_announcements_active ON announcements(is_active);
-CREATE INDEX idx_announcements_created_at ON announcements(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_announcements_active ON announcements(is_active);
+CREATE INDEX IF NOT EXISTS idx_announcements_created_at ON announcements(created_at DESC);
 
 -- ==========================================
 -- SYSTEM CONFIGS TABLE
@@ -307,7 +307,7 @@ CREATE TABLE IF NOT EXISTS ip_ranges (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_ip_ranges_classification ON ip_ranges(classification);
+CREATE INDEX IF NOT EXISTS idx_ip_ranges_classification ON ip_ranges(classification);
 
 -- ==========================================
 -- ISP CONFIGS TABLE
@@ -320,7 +320,7 @@ CREATE TABLE IF NOT EXISTS isp_configs (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_isp_configs_classification ON isp_configs(classification);
+CREATE INDEX IF NOT EXISTS idx_isp_configs_classification ON isp_configs(classification);
 
 -- ==========================================
 -- USER AGENT PATTERNS TABLE
@@ -333,7 +333,7 @@ CREATE TABLE IF NOT EXISTS user_agent_patterns (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_user_agent_patterns_classification ON user_agent_patterns(classification);
+CREATE INDEX IF NOT EXISTS idx_user_agent_patterns_classification ON user_agent_patterns(classification);
 
 -- ==========================================
 -- IP CACHE TABLE (for bot caching)
@@ -353,8 +353,8 @@ CREATE TABLE IF NOT EXISTS ip_cache (
   last_hit TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_ip_cache_classification ON ip_cache(classification);
-CREATE INDEX idx_ip_cache_hit_count ON ip_cache(hit_count DESC);
+CREATE INDEX IF NOT EXISTS idx_ip_cache_classification ON ip_cache(classification);
+CREATE INDEX IF NOT EXISTS idx_ip_cache_hit_count ON ip_cache(hit_count DESC);
 
 -- ==========================================
 -- HELPER FUNCTIONS
