@@ -1713,7 +1713,7 @@ app.get('/api/domains', authMiddleware, adminMiddleware, async (req, res) => {
 });
 
 // Create domain
-app.post('/api/domains', authMiddleware, adminMiddleware, (req, res) => {
+app.post('/api/domains', authMiddleware, adminMiddleware, async (req, res) => {
   const domain = {
     id: generateId('domain'),
     ...req.body,
@@ -1721,55 +1721,55 @@ app.post('/api/domains', authMiddleware, adminMiddleware, (req, res) => {
     is_active: req.body.is_active !== undefined ? req.body.is_active : true,
     created_at: new Date().toISOString()
   };
-  db.domains.set(domain.id, domain);
-  res.status(201).json(domain);
+  const created = await db.domains.create(domain);
+  res.status(201).json(created);
 });
 
 // Update domain
-app.put('/api/domains/:id', authMiddleware, adminMiddleware, (req, res) => {
-  const domain = db.domains.get(req.params.id);
-  if (!domain) return res.status(404).json({ error: 'Domain not found' });
-  
-  const updated = { ...domain, ...req.body };
-  db.domains.set(req.params.id, updated);
+app.put('/api/domains/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  const updated = await db.domains.update(req.params.id, req.body);
+  if (!updated) return res.status(404).json({ error: 'Domain not found' });
   res.json(updated);
 });
 
 // Delete domain
-app.delete('/api/domains/:id', authMiddleware, adminMiddleware, (req, res) => {
-  if (!db.domains.has(req.params.id)) return res.status(404).json({ error: 'Domain not found' });
-  db.domains.delete(req.params.id);
+app.delete('/api/domains/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  const deleted = await db.domains.delete(req.params.id);
+  if (!deleted) return res.status(404).json({ error: 'Domain not found' });
   res.status(204).send();
 });
 
 // Set main domain (only one can be main)
-app.put('/api/domains/:id/set-main', authMiddleware, adminMiddleware, (req, res) => {
-  const domain = db.domains.get(req.params.id);
+app.put('/api/domains/:id/set-main', authMiddleware, adminMiddleware, async (req, res) => {
+  const domain = await db.domains.findById(req.params.id);
   if (!domain) return res.status(404).json({ error: 'Domain not found' });
   
   // Unset all other main domains
-  Array.from(db.domains.values()).forEach(d => {
-    if (d.type === 'main') {
-      db.domains.set(d.id, { ...d, type: 'redirect' });
+  const allDomains = await db.domains.list();
+  for (const d of allDomains) {
+    if (d.type === 'main' && d.id !== req.params.id) {
+      await db.domains.update(d.id, { type: 'redirect' });
     }
-  });
+  }
   
   // Set this domain as main
-  db.domains.set(req.params.id, { ...domain, type: 'main' });
-  res.json({ ...domain, type: 'main' });
+  const updated = await db.domains.update(req.params.id, { type: 'main' });
+  res.json(updated);
 });
 
 // Get active redirect domains (for users to select from)
-app.get('/api/domains/active/redirect', authMiddleware, (req, res) => {
-  const activeDomains = Array.from(db.domains.values()).filter(
+app.get('/api/domains/active/redirect', authMiddleware, async (req, res) => {
+  const allDomains = await db.domains.list();
+  const activeDomains = allDomains.filter(
     d => d.type === 'redirect' && d.is_active === true
   );
   res.json(activeDomains);
 });
 
 // Get main domain
-app.get('/api/domains/main', authMiddleware, (req, res) => {
-  const mainDomain = Array.from(db.domains.values()).find(d => d.type === 'main');
+app.get('/api/domains/main', authMiddleware, async (req, res) => {
+  const allDomains = await db.domains.list();
+  const mainDomain = allDomains.find(d => d.type === 'main');
   if (!mainDomain) return res.status(404).json({ error: 'Main domain not configured' });
   res.json(mainDomain);
 });
