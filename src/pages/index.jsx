@@ -77,11 +77,19 @@ function PagesContent() {
     return 'Home';
   };
 
+  // Check if on admin setup page - render without Layout
+  if (location.pathname === '/admin-setup-once') {
+    return (
+      <Routes>
+        <Route path="/admin-setup-once" element={<OneTimeAdminSetup />} />
+      </Routes>
+    );
+  }
+
   return (
     <Layout currentPageName={getPageName()}>
       <Routes>
         {/* Public Routes */}
-        <Route path="/admin-setup-once" element={<OneTimeAdminSetup />} />
         <Route path="/user/login" element={<UserLogin />} />
         <Route path="/user/signup" element={<UserSignup />} />
         <Route path="/user/setup" element={<FirstTimeSetup />} />
