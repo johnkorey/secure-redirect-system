@@ -3,7 +3,15 @@
  * Full SaaS backend with user/admin authentication, classification, and management
  */
 
-import 'dotenv/config';
+// Load dotenv only in development (not needed in production - DigitalOcean provides env vars)
+if (process.env.NODE_ENV !== 'production') {
+  try {
+    await import('dotenv/config');
+  } catch (e) {
+    console.log('dotenv not available (production mode)');
+  }
+}
+
 import express from 'express';
 import cors from 'cors';
 import { makeRedirectDecision } from './lib/redirectDecisionEngine.js';
