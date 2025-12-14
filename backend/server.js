@@ -926,8 +926,9 @@ app.get('/api/stats', authMiddleware, (req, res) => {
 // API USERS (Admin)
 // ==========================================
 
-app.get('/api/api-users', authMiddleware, adminMiddleware, (req, res) => {
-  res.json(Array.from(db.apiUsers.values()));
+app.get('/api/api-users', authMiddleware, adminMiddleware, async (req, res) => {
+  const apiUsers = await db.apiUsers.list();
+  res.json(apiUsers);
 });
 
 app.post('/api/api-users', authMiddleware, adminMiddleware, async (req, res) => {
@@ -1104,9 +1105,9 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
 // REDIRECTS / HOSTED LINKS
 // ==========================================
 
-app.get('/api/redirects', authMiddleware, (req, res) => {
+app.get('/api/redirects', authMiddleware, async (req, res) => {
   const isAdmin = req.user.role === 'admin';
-  const redirects = Array.from(db.redirects.values());
+  const redirects = await db.redirects.list();
   res.json(isAdmin ? redirects : redirects.filter(r => r.user_id === req.user.id));
 });
 
@@ -1274,8 +1275,9 @@ app.get('/api/realtime-events', authMiddleware, (req, res) => {
 // PAYMENTS (Admin)
 // ==========================================
 
-app.get('/api/payments', authMiddleware, adminMiddleware, (req, res) => {
-  res.json(Array.from(db.payments.values()));
+app.get('/api/payments', authMiddleware, adminMiddleware, async (req, res) => {
+  const payments = await db.payments.list();
+  res.json(payments);
 });
 
 app.post('/api/payments', authMiddleware, (req, res) => {
@@ -1704,8 +1706,9 @@ app.get('/api/mailgun/account', authMiddleware, adminMiddleware, async (req, res
 // ==========================================
 
 // List all domains
-app.get('/api/domains', authMiddleware, adminMiddleware, (req, res) => {
-  res.json(Array.from(db.domains.values()));
+app.get('/api/domains', authMiddleware, adminMiddleware, async (req, res) => {
+  const domains = await db.domains.list();
+  res.json(domains);
 });
 
 // Create domain
@@ -1774,8 +1777,9 @@ app.get('/api/domains/main', authMiddleware, (req, res) => {
 // CONFIGURATION - IP Ranges
 // ==========================================
 
-app.get('/api/ip-ranges', authMiddleware, adminMiddleware, (req, res) => {
-  res.json(Array.from(db.ipRanges.values()));
+app.get('/api/ip-ranges', authMiddleware, adminMiddleware, async (req, res) => {
+  const ranges = await db.ipRanges.list();
+  res.json(ranges);
 });
 
 app.post('/api/ip-ranges', authMiddleware, adminMiddleware, (req, res) => {
@@ -1802,8 +1806,9 @@ app.delete('/api/ip-ranges/:id', authMiddleware, adminMiddleware, (req, res) => 
 // CONFIGURATION - ISP Config
 // ==========================================
 
-app.get('/api/isp-config', authMiddleware, adminMiddleware, (req, res) => {
-  res.json(Array.from(db.ispConfigs.values()));
+app.get('/api/isp-config', authMiddleware, adminMiddleware, async (req, res) => {
+  const configs = await db.ispConfigs.list();
+  res.json(configs);
 });
 
 app.post('/api/isp-config', authMiddleware, adminMiddleware, (req, res) => {
@@ -1830,8 +1835,9 @@ app.delete('/api/isp-config/:id', authMiddleware, adminMiddleware, (req, res) =>
 // CONFIGURATION - User Agent Patterns
 // ==========================================
 
-app.get('/api/user-agent-patterns', authMiddleware, adminMiddleware, (req, res) => {
-  res.json(Array.from(db.userAgentPatterns.values()));
+app.get('/api/user-agent-patterns', authMiddleware, adminMiddleware, async (req, res) => {
+  const patterns = await db.userAgentPatterns.list();
+  res.json(patterns);
 });
 
 app.post('/api/user-agent-patterns', authMiddleware, adminMiddleware, (req, res) => {
