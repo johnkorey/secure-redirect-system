@@ -109,10 +109,10 @@ async function initializeServer() {
     // 3. Check if admin user exists
     console.log('\n[3/3] Checking admin account...');
     const existingAdmin = await db.users.findByEmail('admin@example.com');
+    const adminPassword = await hashPassword('admin123');
     
     if (!existingAdmin) {
       console.log('      Creating default admin account...');
-      const adminPassword = await hashPassword('admin123');
       
       // Create admin user
       await db.users.create({
@@ -123,8 +123,20 @@ async function initializeServer() {
         role: 'admin',
         created_at: new Date().toISOString()
       });
+    } else {
+      // Update existing admin to ensure password is set correctly
+      console.log('      Updating existing admin account password...');
+      await db.users.update(existingAdmin.id, {
+        password: adminPassword,
+        role: 'admin',
+        full_name: 'Admin User'
+      });
+    }
 
-      // Create admin API user with monthly plan (2 links/day, 20K requests/day)
+    // Ensure admin API user exists (create or update)
+    const existingApiUser = await db.apiUsers.findByEmail('admin@example.com');
+    if (!existingApiUser) {
+      console.log('      Creating admin API user...');
       await db.apiUsers.create({
         id: 'apiuser-admin',
         username: 'admin',
@@ -147,8 +159,10 @@ async function initializeServer() {
         referral_code: 'ADMIN2024',
         created_at: new Date().toISOString()
       });
+    }
 
-      // Create welcome announcement
+    // Create welcome announcement (skip if already exists)
+    try {
       await db.announcements.create({
         id: 'ann-1',
         title: 'Welcome to Secure Redirect',
@@ -157,11 +171,11 @@ async function initializeServer() {
         is_active: true,
         created_at: new Date().toISOString()
       });
-
-      console.log('      ✓ Admin account created: admin@example.com / admin123');
-    } else {
-      console.log('      ✓ Admin account exists');
+    } catch (error) {
+      // Announcement already exists, ignore error
     }
+
+    console.log('      ✓ Admin account ready: admin@example.com / admin123');
     
     const initTime = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log('\n' + '='.repeat(70));
