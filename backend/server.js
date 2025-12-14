@@ -233,7 +233,7 @@ app.post('/api/user/signup', async (req, res) => {
     }
     
     // Check if email already registered
-    if (db.users.findByEmail(email.toLowerCase())) {
+    if (await db.users.findByEmail(email.toLowerCase())) {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
@@ -255,7 +255,7 @@ app.post('/api/user/signup', async (req, res) => {
       paid: false,
       created_at: new Date().toISOString()
     };
-    db.signupSessions.create(session);
+    await db.signupSessions.create(session);
 
     // Send verification email
     const mailgunConfig = getMailgunConfig();
@@ -280,7 +280,7 @@ app.post('/api/user/verify-email', async (req, res) => {
   try {
     const { sessionId, verificationCode } = req.body;
     
-    const session = db.signupSessions.findById(sessionId);
+    const session = await db.signupSessions.findById(sessionId);
     if (!session) {
       return res.status(404).json({ error: 'Session not found or expired' });
     }
@@ -294,7 +294,7 @@ app.post('/api/user/verify-email', async (req, res) => {
     }
 
     // Mark session as verified
-    db.signupSessions.update(sessionId, {
+    await db.signupSessions.update(sessionId, {
       verified: true,
       verified_at: new Date().toISOString()
     });
@@ -317,14 +317,14 @@ app.post('/api/user/resend-code', async (req, res) => {
   try {
     const { sessionId } = req.body;
     
-    const session = db.signupSessions.findById(sessionId);
+    const session = await db.signupSessions.findById(sessionId);
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
 
     // Generate new code
     const verificationCode = generateVerificationCode();
-    db.signupSessions.update(sessionId, {
+    await db.signupSessions.update(sessionId, {
       verification_code: verificationCode,
       code_expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString()
     });
@@ -345,8 +345,8 @@ app.post('/api/user/resend-code', async (req, res) => {
 });
 
 // Get pending signup details (for payment page)
-app.get('/api/user/pending-signup/:sessionId', (req, res) => {
-  const session = db.signupSessions.findById(req.params.sessionId);
+app.get('/api/user/pending-signup/:sessionId', async (req, res) => {
+  const session = await db.signupSessions.findById(req.params.sessionId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
@@ -380,7 +380,7 @@ app.post('/api/user/complete-signup', async (req, res) => {
   try {
     const { sessionId, transactionHash, cryptoType } = req.body;
     
-    const session = db.signupSessions.findById(sessionId);
+    const session = await db.signupSessions.findById(sessionId);
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
@@ -405,7 +405,7 @@ app.post('/api/user/complete-signup', async (req, res) => {
       role: 'user',
       created_at: new Date().toISOString()
     };
-    db.users.create(user);
+    await db.users.create(user);
 
     // Create API user in database
     const apiKey = `ak_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -431,7 +431,7 @@ app.post('/api/user/complete-signup', async (req, res) => {
       subscription_expiry: expiryDate.toISOString(),
       created_at: new Date().toISOString()
     };
-    db.apiUsers.create(apiUser);
+    await db.apiUsers.create(apiUser);
 
     // Record payment in database
     const payment = {
@@ -445,10 +445,10 @@ app.post('/api/user/complete-signup', async (req, res) => {
       status: 'verified',
       created_at: new Date().toISOString()
     };
-    db.payments.create(payment);
+    await db.payments.create(payment);
 
     // Mark session as complete
-    db.signupSessions.update(sessionId, {
+    await db.signupSessions.update(sessionId, {
       paid: true,
       completed_at: new Date().toISOString()
     });
@@ -617,7 +617,7 @@ app.post('/api/user/complete-renewal', authMiddleware, async (req, res) => {
     const expiryDate = new Date(startDate.getTime() + pricing.duration * 24 * 60 * 60 * 1000);
 
     // Update API user
-    db.apiUsers.update(apiUser.id, {
+    await db.apiUsers.update(apiUser.id, {
       access_type: session.access_type,
       status: 'active',
       daily_link_limit: pricing.dailyLinkLimit,
@@ -638,11 +638,13 @@ app.post('/api/user/complete-renewal', authMiddleware, async (req, res) => {
       status: 'verified',
       created_at: new Date().toISOString()
     };
-    db.payments.set(payment.id, payment);
+    await db.payments.create(payment);
 
     // Mark session as completed
-    session.status = 'completed';
-    db.signupSessions.set(sessionId, session);
+    await db.signupSessions.update(sessionId, {
+      status: 'completed',
+      completed_at: new Date().toISOString()
+    });
 
     // Send confirmation email if Mailgun configured
     try {
@@ -812,7 +814,7 @@ app.post('/api/user/setup-password', async (req, res) => {
     }
 
     // Check if password is already set
-    const existingUser = db.users.findByEmail(apiUser.email);
+    const existingUser = await db.users.findByEmail(apiUser.email);
     if (existingUser && existingUser.password && existingUser.password !== '') {
       return res.status(400).json({ error: 'Password already set. Please use the login page.' });
     }
@@ -822,9 +824,9 @@ app.post('/api/user/setup-password', async (req, res) => {
 
     // Create or update user
     if (existingUser) {
-      db.users.update(existingUser.id, { password: hashedPassword });
+      await db.users.update(existingUser.id, { password: hashedPassword });
     } else {
-      db.users.create({
+      await db.users.create({
         id: `user-${Date.now()}`,
         email: apiUser.email,
         password: hashedPassword,
@@ -955,19 +957,19 @@ app.put('/api/api-users/:id', authMiddleware, adminMiddleware, (req, res) => {
   res.json(updated);
 });
 
-app.delete('/api/api-users/:id', authMiddleware, adminMiddleware, (req, res) => {
-  const apiUser = db.apiUsers.get(req.params.id);
+app.delete('/api/api-users/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  const apiUser = await db.apiUsers.findById(req.params.id);
   if (!apiUser) return res.status(404).json({ error: 'Not found' });
   
   // Also delete the associated user account if it exists
-  const userAccount = db.users.findByEmail(apiUser.email);
+  const userAccount = await db.users.findByEmail(apiUser.email);
   if (userAccount) {
-    db.users.delete(userAccount.id);
+    await db.users.delete(userAccount.id);
     console.log(`[DELETE] Deleted user account: ${userAccount.email}`);
   }
   
   // Delete the API user
-  db.apiUsers.delete(req.params.id);
+  await db.apiUsers.delete(req.params.id);
   console.log(`[DELETE] Deleted API user: ${apiUser.email}`);
   
   res.status(204).send();
@@ -1196,13 +1198,13 @@ app.put('/api/redirects/:id', authMiddleware, (req, res) => {
   res.json(updated);
 });
 
-app.delete('/api/redirects/:id', authMiddleware, (req, res) => {
-  const redirect = db.redirects.get(req.params.id);
+app.delete('/api/redirects/:id', authMiddleware, async (req, res) => {
+  const redirect = await db.redirects.findById(req.params.id);
   if (!redirect) return res.status(404).json({ error: 'Not found' });
   if (req.user.role !== 'admin' && redirect.user_id !== req.user.id) {
     return res.status(403).json({ error: 'Access denied' });
   }
-  db.redirects.delete(req.params.id);
+  await db.redirects.delete(req.params.id);
   res.status(204).send();
 });
 
