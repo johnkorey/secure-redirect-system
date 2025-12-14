@@ -17,8 +17,8 @@ services:
   - name: web
     # Source configuration
     github:
-      repo: your-username/your-repo-name
-      branch: main
+      repo: johnkorey/secure-redirect-system
+      branch: master
       deploy_on_push: true
 
     # Build configuration
@@ -55,9 +55,9 @@ services:
         value: "3001"
         scope: RUN_TIME
       
-      # JWT Secret (CHANGE THIS!)
+      # JWT Secret - SET THIS IN DIGITALOCEAN DASHBOARD!
       - key: JWT_SECRET
-        value: ${APP_KEY}
+        value: "change-this-to-a-secure-random-string-min-32-characters"
         type: SECRET
         scope: RUN_TIME
       
