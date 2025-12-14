@@ -1112,7 +1112,7 @@ app.get('/api/redirects', authMiddleware, async (req, res) => {
   res.json(isAdmin ? redirects : redirects.filter(r => r.user_id === req.user.id));
 });
 
-app.post('/api/redirects', authMiddleware, (req, res) => {
+app.post('/api/redirects', authMiddleware, async (req, res) => {
   const { name, human_url, bot_url, is_enabled = true, domain_id, domain_name, full_url, public_id } = req.body;
   if (!name || !human_url || !bot_url) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -1120,12 +1120,15 @@ app.post('/api/redirects', authMiddleware, (req, res) => {
 
   // Validate domain if provided
   if (domain_id) {
-    const domain = db.domains.get(domain_id);
+    const domain = await db.domains.findById(domain_id);
     if (!domain) {
       return res.status(400).json({ error: 'Invalid domain' });
     }
+    // SECURITY: Prevent using main domain for redirects
     if (domain.type === 'main') {
-      return res.status(400).json({ error: 'Cannot use main domain for redirect links' });
+      return res.status(400).json({ 
+        error: 'Cannot use main domain for redirect links. Please select a redirect domain.' 
+      });
     }
     if (!domain.is_active) {
       return res.status(400).json({ error: 'Domain is not active' });
@@ -1176,8 +1179,8 @@ app.post('/api/redirects', authMiddleware, (req, res) => {
     bot_clicks: 0,
     created_date: new Date().toISOString()
   };
-  db.redirects.set(publicId, redirect);
-  res.status(201).json(redirect);
+  const created = await db.redirects.create(redirect);
+  res.status(201).json(created);
 });
 
 app.get('/api/redirects/:id', authMiddleware, (req, res) => {
@@ -1758,11 +1761,15 @@ app.put('/api/domains/:id/set-main', authMiddleware, adminMiddleware, async (req
 });
 
 // Get active redirect domains (for users to select from)
+// SECURITY: Only return domains with type='redirect', NOT the main domain
 app.get('/api/domains/active/redirect', authMiddleware, async (req, res) => {
   const allDomains = await db.domains.list();
   const activeDomains = allDomains.filter(
     d => d.type === 'redirect' && d.is_active === true
   );
+  
+  console.log(`[DOMAINS] Found ${activeDomains.length} active redirect domains (main domain excluded)`);
+  
   res.json(activeDomains);
 });
 
@@ -2888,7 +2895,72 @@ app.get('/r/:publicId', async (req, res) => {
 // ==========================================
 
 // Serve index.html for all non-API routes (SPA routing)
-app.get('*', (req, res) => {
+// BUT: Block redirect domains from accessing the site UI
+app.get('*', async (req, res) => {
+  const hostname = req.get('host')?.split(':')[0]; // Remove port if present
+  
+  // Get all domains to check which type this is
+  const allDomains = await db.domains.list();
+  const currentDomain = allDomains.find(d => d.domain_name === hostname);
+  
+  // If this is a redirect domain, block UI access
+  if (currentDomain && currentDomain.type === 'redirect') {
+    return res.status(403).send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Access Denied</title>
+          <style>
+            body {
+              font-family: system-ui, -apple-system, sans-serif;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 100vh;
+              margin: 0;
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            }
+            .container {
+              text-align: center;
+              padding: 60px 40px;
+              background: white;
+              border-radius: 20px;
+              box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+              max-width: 500px;
+            }
+            h1 {
+              color: #dc2626;
+              font-size: 32px;
+              margin-bottom: 16px;
+            }
+            p {
+              color: #64748b;
+              font-size: 16px;
+              line-height: 1.6;
+              margin: 0;
+            }
+            .icon {
+              font-size: 64px;
+              margin-bottom: 20px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="icon">🚫</div>
+            <h1>Access Denied</h1>
+            <p>
+              This domain (<strong>${hostname}</strong>) is configured for redirect links only.
+              <br><br>
+              Please use the main domain to access the dashboard.
+            </p>
+          </div>
+        </body>
+      </html>
+    `);
+  }
+  
+  // Main domain or unknown domain (for development) - serve UI
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
