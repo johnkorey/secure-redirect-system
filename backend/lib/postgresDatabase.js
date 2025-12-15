@@ -1119,6 +1119,10 @@ export const companionDomains = {
 // ==========================================
 
 export const hostedLinks = {
+  async list() {
+    return [];
+  },
+  
   async values() {
     return [];
   }

