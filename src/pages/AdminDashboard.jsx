@@ -15,16 +15,19 @@ export default function AdminDashboard() {
   const { data: visitors = [] } = useQuery({
     queryKey: ['all-visitors'],
     queryFn: () => base44.entities.VisitorLog.list('-created_date', 1000),
+    refetchInterval: 5000, // Auto-refresh every 5 seconds
   });
 
   const { data: realtimeEvents = [] } = useQuery({
     queryKey: ['realtime-events'],
     queryFn: () => base44.entities.RealtimeEvent.list('-created_date', 100),
+    refetchInterval: 5000, // Auto-refresh every 5 seconds
   });
 
   const { data: apiUsers = [] } = useQuery({
     queryKey: ['api-users'],
     queryFn: () => base44.entities.APIUser.list(),
+    refetchInterval: 30000, // Auto-refresh every 30 seconds (less frequent)
   });
 
   // Get time range label
@@ -157,8 +160,14 @@ export default function AdminDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">Dashboard Overview</h1>
-          <p className="text-slate-500">Monitor traffic metrics and system performance</p>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-3xl font-bold text-slate-900">Dashboard Overview</h1>
+            <span className="flex items-center gap-2 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium">
+              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+              Live
+            </span>
+          </div>
+          <p className="text-slate-500">Monitor traffic metrics and system performance • Auto-refreshes every 5s</p>
         </div>
         <div className="flex items-center gap-3">
           <Calendar className="w-5 h-5 text-slate-600" />

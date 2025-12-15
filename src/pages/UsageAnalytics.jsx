@@ -11,11 +11,13 @@ export default function UsageAnalytics() {
   const { data: visitors = [] } = useQuery({
     queryKey: ['all-visitors'],
     queryFn: () => base44.entities.VisitorLog.list('-created_date', 1000),
+    refetchInterval: 10000, // Auto-refresh every 10 seconds
   });
 
   const { data: apiUsers = [] } = useQuery({
     queryKey: ['api-users'],
     queryFn: () => base44.entities.APIUser.list(),
+    refetchInterval: 30000, // Auto-refresh every 30 seconds
   });
 
   // Daily request data (last 7 days)
@@ -55,8 +57,14 @@ export default function UsageAnalytics() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">Usage Analytics</h1>
-        <p className="text-slate-500">API usage statistics and trends</p>
+        <div className="flex items-center gap-3 mb-2">
+          <h1 className="text-3xl font-bold text-slate-900">Usage Analytics</h1>
+          <span className="flex items-center gap-2 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium">
+            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+            Live
+          </span>
+        </div>
+        <p className="text-slate-500">API usage statistics and trends • Auto-refreshes every 10s</p>
       </div>
 
       {/* Key Metrics */}

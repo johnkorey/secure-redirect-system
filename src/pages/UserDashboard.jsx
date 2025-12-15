@@ -37,6 +37,7 @@ export default function UserDashboard() {
       return result;
     },
     enabled: !!currentUser?.id,
+    refetchInterval: 5000, // Auto-refresh every 5 seconds
   });
 
   // Debug logging
@@ -209,9 +210,13 @@ export default function UserDashboard() {
           <TabsContent value="overview" className="space-y-6">
             {/* Time Range Filter */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <Calendar className="w-5 h-5 text-slate-600" />
                 <span className="text-sm font-medium text-slate-700">Time Range:</span>
+                <span className="flex items-center gap-2 px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">
+                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                  Live Updates
+                </span>
               </div>
               <Select value={timeRange} onValueChange={setTimeRange}>
                 <SelectTrigger className="w-48">
