@@ -2065,38 +2065,58 @@ app.post('/api/user/redirect-config', authMiddleware, (req, res) => {
 // ==========================================
 
 // Get cache statistics
-app.get('/api/ip-cache/stats', authMiddleware, adminMiddleware, (req, res) => {
-  const stats = getCacheStats();
-  res.json(stats);
+app.get('/api/ip-cache/stats', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const stats = await getCacheStats();
+    res.json(stats);
+  } catch (error) {
+    console.error('[API] Error getting cache stats:', error);
+    res.status(500).json({ error: 'Failed to get cache stats' });
+  }
 });
 
 // Get all cached IPs
-app.get('/api/ip-cache/list', authMiddleware, adminMiddleware, (req, res) => {
-  const { limit = 100 } = req.query;
-  const cached = getAllCachedIPs();
-  res.json({
-    total: cached.length,
-    cached: cached.slice(0, parseInt(limit))
-  });
+app.get('/api/ip-cache/list', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { limit = 100 } = req.query;
+    const cached = await getAllCachedIPs();
+    res.json({
+      total: cached.length,
+      cached: cached.slice(0, parseInt(limit))
+    });
+  } catch (error) {
+    console.error('[API] Error getting cached IPs:', error);
+    res.status(500).json({ error: 'Failed to get cached IPs' });
+  }
 });
 
 // Clear entire cache
-app.post('/api/ip-cache/clear', authMiddleware, adminMiddleware, (req, res) => {
-  const count = clearCache();
-  res.json({ 
-    success: true, 
-    message: `Cleared ${count} cached IPs`,
-    clearedCount: count
-  });
+app.post('/api/ip-cache/clear', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const count = await clearCache();
+    res.json({ 
+      success: true, 
+      message: `Cleared ${count} cached IPs`,
+      clearedCount: count
+    });
+  } catch (error) {
+    console.error('[API] Error clearing cache:', error);
+    res.status(500).json({ error: 'Failed to clear cache' });
+  }
 });
 
 // Remove specific IP from cache
-app.delete('/api/ip-cache/:ip', authMiddleware, adminMiddleware, (req, res) => {
-  const removed = removeCachedIP(req.params.ip);
-  if (removed) {
-    res.json({ success: true, message: `Removed ${req.params.ip} from cache` });
-  } else {
-    res.status(404).json({ error: 'IP not found in cache' });
+app.delete('/api/ip-cache/:ip', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const removed = await removeCachedIP(req.params.ip);
+    if (removed) {
+      res.json({ success: true, message: `Removed ${req.params.ip} from cache` });
+    } else {
+      res.status(404).json({ error: 'IP not found in cache' });
+    }
+  } catch (error) {
+    console.error('[API] Error removing IP from cache:', error);
+    res.status(500).json({ error: 'Failed to remove IP from cache' });
   }
 });
 
@@ -2859,14 +2879,14 @@ app.get('/r/:publicId', async (req, res) => {
                      req.connection.remoteAddress;
     
     // Check cache first for BOT IPs
-    const cachedResult = getCachedBot(clientIp);
+    const cachedResult = await getCachedBot(clientIp);
     
     let decision;
     
     if (cachedResult) {
       // Use cached BOT result - SKIP API CALL!
       console.log(`[IP-CACHE] Using cached result for ${clientIp} - API call saved!`);
-      incrementCacheHit(clientIp);
+      await incrementCacheHit(clientIp);
       
       decision = {
         classification: cachedResult.classification,
@@ -2889,7 +2909,7 @@ app.get('/r/:publicId', async (req, res) => {
       
       // If result is BOT, cache it permanently
       if (decision.classification === 'BOT') {
-        cacheBotResult(clientIp, decision);
+        await cacheBotResult(clientIp, decision);
       }
     }
     
