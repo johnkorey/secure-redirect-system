@@ -1,0 +1,79 @@
+# Block all crawlers from accessing redirect links
+User-agent: *
+Disallow: /r/
+Disallow: /api/
+
+# Explicitly block common crawlers
+User-agent: Googlebot
+Disallow: /
+
+User-agent: Bingbot
+Disallow: /
+
+User-agent: Slurp
+Disallow: /
+
+User-agent: DuckDuckBot
+Disallow: /
+
+User-agent: Baiduspider
+Disallow: /
+
+User-agent: YandexBot
+Disallow: /
+
+User-agent: Sogou
+Disallow: /
+
+User-agent: Exabot
+Disallow: /
+
+User-agent: facebot
+Disallow: /
+
+User-agent: ia_archiver
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+User-agent: AhrefsBot
+Disallow: /
+
+User-agent: MJ12bot
+Disallow: /
+
+User-agent: DotBot
+Disallow: /
+
+User-agent: Rogerbot
+Disallow: /
+
+User-agent: SerpstatBot
+Disallow: /
+
+User-agent: archive.org_bot
+Disallow: /
+
+User-agent: PetalBot
+Disallow: /
+
+User-agent: Screaming Frog
+Disallow: /
+
+# Block security scanners
+User-agent: censys
+Disallow: /
+
+User-agent: Shodan
+Disallow: /
+
+User-agent: masscan
+Disallow: /
+
+User-agent: nmap
+Disallow: /
+
+# No sitemap
+Sitemap:
+

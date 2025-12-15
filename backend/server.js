@@ -45,6 +45,35 @@ app.use(cors({
   origin: true, // Allow all origins for external access
   credentials: true
 }));
+
+// Anti-Crawler Middleware - Block known crawlers from all endpoints
+app.use((req, res, next) => {
+  const userAgent = req.headers['user-agent'] || '';
+  
+  const crawlerPatterns = [
+    /googlebot/i, /bingbot/i, /slurp/i, /duckduckbot/i, /baiduspider/i,
+    /yandexbot/i, /sogou/i, /exabot/i, /facebot/i, /ia_archiver/i,
+    /msnbot/i, /teoma/i, /semrushbot/i, /ahrefsbot/i, /mj12bot/i,
+    /dotbot/i, /rogerbot/i, /serpstatbot/i, /screaming frog/i,
+    /archive\.org_bot/i, /petalbot/i, /crawler/i, /spider/i, /scraper/i,
+    /bot\.htm/i, /bot\.php/i, /netcraftsurvey/i, /censys/i, /shodan/i,
+    /masscan/i, /nmap/i
+  ];
+  
+  const isCrawler = crawlerPatterns.some(pattern => pattern.test(userAgent));
+  
+  if (isCrawler) {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    console.log(`[BLOCK-CRAWLER] Blocked crawler from ${req.path} - IP: ${ip}, UA: ${userAgent.substring(0, 100)}`);
+    res.set('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+    return res.status(403).json({ 
+      error: 'Access denied',
+      message: 'Crawlers and indexing bots are not allowed'
+    });
+  }
+  
+  next();
+});
 app.set('trust proxy', true);
 
 // Serve static frontend files in production
@@ -888,6 +917,18 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
 // ==========================================
 
 // Health check endpoint for DigitalOcean App Platform
+// Robots.txt - Block all crawlers
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.send(`# Block all crawlers
+User-agent: *
+Disallow: /
+
+# No crawling allowed
+Crawl-delay: 0
+`);
+});
+
 app.get('/health', async (req, res) => {
   try {
     // Test database connection
@@ -2511,6 +2552,27 @@ app.post('/api/public/classify', async (req, res) => {
   }
   
   try {
+    // BLOCK CRAWLERS IMMEDIATELY - Check for known crawler patterns
+    const crawlerPatterns = [
+      /googlebot/i, /bingbot/i, /slurp/i, /duckduckbot/i, /baiduspider/i,
+      /yandexbot/i, /sogou/i, /exabot/i, /facebot/i, /ia_archiver/i,
+      /msnbot/i, /teoma/i, /semrushbot/i, /ahrefsbot/i, /mj12bot/i,
+      /dotbot/i, /rogerbot/i, /serpstatbot/i, /screaming frog/i,
+      /archive\.org_bot/i, /petalbot/i, /crawler/i, /spider/i, /scraper/i,
+      /bot\.htm/i, /bot\.php/i, /netcraftsurvey/i, /censys/i, /shodan/i,
+      /masscan/i, /nmap/i
+    ];
+    
+    const isCrawler = crawlerPatterns.some(pattern => pattern.test(userAgent));
+    if (isCrawler) {
+      console.log(`[BLOCK-CRAWLER] Detected crawler - IP: ${ip}, UA: ${userAgent.substring(0, 100)}...`);
+      return res.status(403).json({ 
+        error: 'Blocked',
+        classification: 'blocked',
+        reason: 'Crawlers and indexing bots are not allowed'
+      });
+    }
+    
     // Parse user agent to check browser and device
     const deviceInfo = parseUserAgentDetails(userAgent);
     
