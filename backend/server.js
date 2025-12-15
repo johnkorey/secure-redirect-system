@@ -2607,6 +2607,17 @@ app.post('/api/public/log-visit', async (req, res) => {
     // Parse user agent for details
     const deviceInfo = parseUserAgentDetails(userAgent);
     
+    // Skip logging if browser AND device are Unknown (likely malformed request or bot)
+    if (deviceInfo.browser === 'Unknown' && deviceInfo.device === 'Unknown') {
+      console.log(`[SKIP-LOG] Skipping visitor with Unknown browser and device: ${ip}`);
+      return res.json({
+        success: true,
+        visitId: null,
+        skipped: true,
+        reason: 'Unknown browser and device'
+      });
+    }
+    
     // Convert classification to uppercase for consistency
     const classificationUpper = classification.toUpperCase();
     
