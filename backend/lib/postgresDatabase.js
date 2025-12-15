@@ -1047,8 +1047,10 @@ export const companionDomains = {
     const result = await query(
       `INSERT INTO companion_domains (
         id, domain_name, vercel_deployment_url, status, is_verified,
-        verification_code, added_by, notes, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        verification_code, added_by, notes,
+        mailgun_api_key, mailgun_domain, mailgun_from_email, mailgun_from_name, mailgun_region,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *`,
       [
         domain.id,
@@ -1059,6 +1061,11 @@ export const companionDomains = {
         domain.verification_code || null,
         domain.added_by || null,
         domain.notes || null,
+        domain.mailgun_api_key || null,
+        domain.mailgun_domain || null,
+        domain.mailgun_from_email || null,
+        domain.mailgun_from_name || null,
+        domain.mailgun_region || 'us',
         domain.created_at || new Date()
       ]
     );

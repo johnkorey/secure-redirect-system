@@ -170,6 +170,11 @@ CREATE TABLE IF NOT EXISTS companion_domains (
   verification_code VARCHAR(100),
   added_by VARCHAR(50),
   notes TEXT,
+  mailgun_api_key VARCHAR(255),
+  mailgun_domain VARCHAR(255),
+  mailgun_from_email VARCHAR(255),
+  mailgun_from_name VARCHAR(255),
+  mailgun_region VARCHAR(50) DEFAULT 'us',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   verified_at TIMESTAMP,
   last_used_at TIMESTAMP

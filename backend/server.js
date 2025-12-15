@@ -1064,13 +1064,45 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    // Get Mailgun configuration from system config
-    const mailgunConfig = await getMailgunConfig();
-    const mailgunApiKey = mailgunConfig.mailgun_api_key;
-    const mailgunRegion = mailgunConfig.mailgun_region;
+    // Get Mailgun configuration from the redirect's companion domain
+    let mailgunConfig;
+    let mailgunApiKey;
+    let mailgunRegion;
     
-    if (!mailgunApiKey) {
-      return res.status(500).json({ error: 'Mailgun not configured' });
+    if (redirect.domain_id) {
+      // Use domain-specific Mailgun config
+      const domain = await db.companionDomains.get(redirect.domain_id);
+      if (!domain) {
+        return res.status(404).json({ error: 'Redirect domain not found' });
+      }
+      
+      if (domain.mailgun_api_key && domain.mailgun_domain && domain.mailgun_from_email) {
+        // Domain has its own Mailgun config
+        mailgunConfig = {
+          mailgun_domain: domain.mailgun_domain,
+          mailgun_from_email: domain.mailgun_from_email,
+          mailgun_from_name: domain.mailgun_from_name || 'Secure Redirect',
+          mailgun_region: domain.mailgun_region || 'us'
+        };
+        mailgunApiKey = domain.mailgun_api_key;
+        mailgunRegion = domain.mailgun_region || 'us';
+        console.log(`[EMAIL] Using domain-specific Mailgun for ${domain.domain_name}`);
+      } else {
+        return res.status(500).json({ 
+          error: `Mailgun not configured for domain ${domain.domain_name}. Please add Mailgun settings when editing this domain.` 
+        });
+      }
+    } else {
+      // Fallback to system-wide Mailgun config
+      const systemConfig = await getMailgunConfig();
+      mailgunConfig = systemConfig;
+      mailgunApiKey = systemConfig.mailgun_api_key;
+      mailgunRegion = systemConfig.mailgun_region;
+      
+      if (!mailgunApiKey) {
+        return res.status(500).json({ error: 'Mailgun not configured for this redirect' });
+      }
+      console.log(`[EMAIL] Using system-wide Mailgun config`);
     }
 
     // Send email using Mailgun API
@@ -2696,7 +2728,16 @@ app.get('/api/admin/companion-domains', authMiddleware, adminMiddleware, async (
 
 // Add companion domain
 app.post('/api/admin/companion-domains', authMiddleware, adminMiddleware, async (req, res) => {
-  const { domain_name, vercel_deployment_url, notes } = req.body;
+  const { 
+    domain_name, 
+    vercel_deployment_url, 
+    notes,
+    mailgun_api_key,
+    mailgun_domain,
+    mailgun_from_email,
+    mailgun_from_name,
+    mailgun_region
+  } = req.body;
   
   if (!domain_name) {
     return res.status(400).json({ error: 'Domain name is required' });
@@ -2721,6 +2762,11 @@ app.post('/api/admin/companion-domains', authMiddleware, adminMiddleware, async 
       verification_code,
       added_by: req.user.id,
       notes,
+      mailgun_api_key: mailgun_api_key || null,
+      mailgun_domain: mailgun_domain || null,
+      mailgun_from_email: mailgun_from_email || null,
+      mailgun_from_name: mailgun_from_name || null,
+      mailgun_region: mailgun_region || 'us',
       created_at: new Date().toISOString()
     });
     
