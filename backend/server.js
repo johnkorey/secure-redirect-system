@@ -1066,15 +1066,30 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
 
     // Get Mailgun configuration from the redirect's companion domain
     // Test email ONLY works with domain-specific Mailgun config (no system fallback)
-    if (!redirect.domain_id) {
+    
+    // Extract domain name from redirect's full URL
+    let domainName = redirect.domain_name;
+    if (!domainName && redirect.full_url) {
+      try {
+        const urlObj = new URL(redirect.full_url);
+        domainName = urlObj.hostname;
+      } catch (e) {
+        console.error('[EMAIL] Failed to parse redirect URL:', e);
+      }
+    }
+    
+    if (!domainName) {
       return res.status(400).json({ 
         error: 'Test email not available for this redirect. Redirect must be associated with a companion domain that has Mailgun configured.' 
       });
     }
     
-    const domain = await db.companionDomains.get(redirect.domain_id);
+    // Look up companion domain by name
+    const domain = await db.companionDomains.getByDomain(domainName);
     if (!domain) {
-      return res.status(404).json({ error: 'Redirect domain not found' });
+      return res.status(404).json({ 
+        error: `Companion domain "${domainName}" not found. Please add this domain in Admin → Companion Domains first.` 
+      });
     }
     
     // Check if domain has Mailgun configured
