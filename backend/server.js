@@ -1054,7 +1054,7 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
     }
 
     // Find the redirect
-    const redirect = db.redirects.get(redirect_id);
+    const redirect = await db.redirects.get(redirect_id);
     if (!redirect) {
       return res.status(404).json({ error: 'Redirect not found' });
     }
@@ -1067,7 +1067,7 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
     // Get domain configuration for this redirect
     let domainConfig;
     if (redirect.domain_id) {
-      const domain = db.domains.get(redirect.domain_id);
+      const domain = await db.companionDomains.get(redirect.domain_id);
       if (!domain) {
         return res.status(404).json({ error: 'Domain configuration not found' });
       }
@@ -1078,7 +1078,8 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
       };
     } else {
       // Use main domain if no domain specified
-      const mainDomain = Array.from(db.domains.values()).find(d => d.type === 'main');
+      const allDomains = await db.companionDomains.getAll();
+      const mainDomain = allDomains.find(d => d.type === 'main');
       if (!mainDomain) {
         return res.status(404).json({ error: 'Main domain not configured' });
       }
