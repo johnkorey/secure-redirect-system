@@ -67,7 +67,7 @@ export default function ProfileSettings({ apiUser }) {
   const updateProfileMutation = useMutation({
     mutationFn: (data) => base44.entities.APIUser.update(apiUser.id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['my-profile'] });
+      queryClient.invalidateQueries({ queryKey: ['current-user'] }); // Match UserDashboard query key
       toast.success('Profile updated!');
     },
   });
@@ -79,7 +79,7 @@ export default function ProfileSettings({ apiUser }) {
       return base44.entities.APIUser.update(apiUser.id, { api_key: newKey });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['my-profile'] });
+      queryClient.invalidateQueries({ queryKey: ['current-user'] }); // Match UserDashboard query key
       toast.success('API key regenerated!');
     },
   });

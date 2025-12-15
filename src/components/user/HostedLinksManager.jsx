@@ -84,7 +84,7 @@ export default function HostedLinksManager({ apiUser }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-redirects'] });
-      queryClient.invalidateQueries({ queryKey: ['my-profile'] });
+      queryClient.invalidateQueries({ queryKey: ['current-user'] }); // Match UserDashboard query key
       setShowCreateDialog(false);
       setNewLink({ domain_id: '', humanUrl: '', botUrl: '' });
       toast.success('Redirect link created!');
