@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS domains (
   is_main BOOLEAN DEFAULT false,
   is_active BOOLEAN DEFAULT true,
   mailgun_api_key VARCHAR(255),
+  mailgun_domain VARCHAR(255),
   mailgun_region VARCHAR(50) DEFAULT 'us',
   mailgun_from_email VARCHAR(255),
   mailgun_from_name VARCHAR(255),

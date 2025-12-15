@@ -443,14 +443,14 @@ export const domains = {
     const result = await query(
       `INSERT INTO domains (
         id, domain_name, domain_type, is_main, is_active,
-        mailgun_api_key, mailgun_region, mailgun_from_email, mailgun_from_name, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        mailgun_api_key, mailgun_domain, mailgun_region, mailgun_from_email, mailgun_from_name, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *, domain_type as type`,
       [
         domain.id, domain.domain_name, domain.type || domain.domain_type || 'redirect',
         domain.is_main || false, domain.is_active !== false,
-        domain.mailgun_api_key, domain.mailgun_region, domain.mailgun_from_email,
-        domain.mailgun_from_name, domain.created_at || new Date()
+        domain.mailgun_api_key, domain.mailgun_domain, domain.mailgun_region, 
+        domain.mailgun_from_email, domain.mailgun_from_name, domain.created_at || new Date()
       ]
     );
     return result.rows[0];
