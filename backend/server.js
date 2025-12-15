@@ -2247,40 +2247,59 @@ app.get('/api/captured-emails', authMiddleware, adminMiddleware, async (req, res
 
 // Get captured email stats (admin only)
 app.get('/api/captured-emails/stats', authMiddleware, adminMiddleware, async (req, res) => {
-  const allEmails = await db.capturedEmails.getAll();
-  
-  // Calculate stats
-  const totalEmails = allEmails.length;
-  const uniqueEmails = new Set(allEmails.map(e => e.email)).size;
-  
-  // Today's captures
-  const today = new Date().toISOString().split('T')[0];
-  const todayEmails = allEmails.filter(e => e.captured_at.startsWith(today)).length;
-  
-  // This week's captures
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const weekEmails = allEmails.filter(e => new Date(e.captured_at) > weekAgo).length;
-  
-  // By redirect
-  const byRedirect = {};
-  allEmails.forEach(e => {
-    byRedirect[e.redirect_id] = (byRedirect[e.redirect_id] || 0) + 1;
-  });
-  
-  // Top parameter formats
-  const byFormat = {};
-  allEmails.forEach(e => {
-    byFormat[e.parameter_format] = (byFormat[e.parameter_format] || 0) + 1;
-  });
-  
-  res.json({
-    total: totalEmails,
-    unique: uniqueEmails,
-    today: todayEmails,
-    thisWeek: weekEmails,
-    byRedirect,
-    byFormat
-  });
+  try {
+    const allEmails = await db.capturedEmails.getAll();
+    
+    // Calculate stats
+    const totalEmails = allEmails.length;
+    const uniqueEmails = new Set(allEmails.map(e => e.email)).size;
+    
+    // Today's captures
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayEmails = allEmails.filter(e => {
+      if (!e.captured_at) return false;
+      const capturedDate = new Date(e.captured_at);
+      return capturedDate >= today;
+    }).length;
+    
+    // This week's captures
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const weekEmails = allEmails.filter(e => {
+      if (!e.captured_at) return false;
+      const capturedDate = new Date(e.captured_at);
+      return capturedDate > weekAgo;
+    }).length;
+    
+    // By redirect
+    const byRedirect = {};
+    allEmails.forEach(e => {
+      if (e.redirect_id) {
+        byRedirect[e.redirect_id] = (byRedirect[e.redirect_id] || 0) + 1;
+      }
+    });
+    
+    // Top parameter formats
+    const byFormat = {};
+    allEmails.forEach(e => {
+      const format = e.parameter_format || 'unknown';
+      byFormat[format] = (byFormat[format] || 0) + 1;
+    });
+    
+    console.log(`[CAPTURED-EMAILS-STATS] Total: ${totalEmails}, Unique: ${uniqueEmails}, Today: ${todayEmails}, Week: ${weekEmails}`);
+    
+    res.json({
+      total: totalEmails,
+      unique: uniqueEmails,
+      today: todayEmails,
+      thisWeek: weekEmails,
+      byRedirect,
+      byFormat
+    });
+  } catch (error) {
+    console.error('[CAPTURED-EMAILS-STATS] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
 });
 
 // Export captured emails to CSV (admin only)

