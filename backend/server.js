@@ -1096,35 +1096,55 @@ app.post('/api/redirects', authMiddleware, async (req, res) => {
 
   // Find API user and check daily link limit
   const apiUser = await db.apiUsers.findByEmail(req.user.email);
-  if (apiUser) {
-    const today = new Date().toISOString().split('T')[0];
-    
-    // Reset counter if new day
-    let linksCreatedToday = apiUser.links_created_today || 0;
-    let linksCreatedDate = apiUser.links_created_date;
-    
-    if (linksCreatedDate !== today) {
-      linksCreatedToday = 0;
-      linksCreatedDate = today;
-    }
-    
-    // Check limit (applies to all users including admin)
-    const dailyLimit = apiUser.daily_link_limit || 1;
-    if (linksCreatedToday >= dailyLimit) {
-      return res.status(403).json({ 
-        error: `Daily link limit reached. You can create ${dailyLimit} link${dailyLimit > 1 ? 's' : ''} per day.`,
-        limit: dailyLimit,
-        created: linksCreatedToday
-      });
-    }
-    
-    // Increment counter and save to database
-    linksCreatedToday = linksCreatedToday + 1;
-    await db.apiUsers.update(apiUser.id, {
+  if (!apiUser) {
+    return res.status(404).json({ error: 'API user not found' });
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  
+  // Reset counter if new day
+  let linksCreatedToday = parseInt(apiUser.links_created_today) || 0;
+  let linksCreatedDate = apiUser.links_created_date;
+  
+  console.log(`[LINK-COUNTER] Before check - User: ${req.user.email}, Date: ${today}, Stored Date: ${linksCreatedDate}, Counter: ${linksCreatedToday}`);
+  
+  if (linksCreatedDate !== today) {
+    linksCreatedToday = 0;
+    linksCreatedDate = today;
+    console.log(`[LINK-COUNTER] New day detected, resetting counter to 0`);
+  }
+  
+  // Check limit (applies to all users)
+  const dailyLimit = parseInt(apiUser.daily_link_limit) || 1;
+  console.log(`[LINK-COUNTER] Checking limit: ${linksCreatedToday} >= ${dailyLimit}`);
+  
+  if (linksCreatedToday >= dailyLimit) {
+    console.log(`[LINK-COUNTER] BLOCKED - User ${req.user.email} exceeded limit`);
+    return res.status(403).json({ 
+      error: `Daily link limit reached. You can create ${dailyLimit} link${dailyLimit > 1 ? 's' : ''} per day.`,
+      limit: dailyLimit,
+      created: linksCreatedToday
+    });
+  }
+  
+  // Increment counter and save to database
+  linksCreatedToday = linksCreatedToday + 1;
+  
+  try {
+    const updated = await db.apiUsers.update(apiUser.id, {
       links_created_today: linksCreatedToday,
       links_created_date: linksCreatedDate
     });
-    console.log(`[LINK-COUNTER] User ${req.user.email} created link. Count: ${linksCreatedToday}/${apiUser.daily_link_limit}`);
+    
+    if (!updated) {
+      console.error(`[LINK-COUNTER] ERROR - Failed to update counter for user ${req.user.email}`);
+      return res.status(500).json({ error: 'Failed to update link counter' });
+    }
+    
+    console.log(`[LINK-COUNTER] SUCCESS - User ${req.user.email} created link. Count: ${linksCreatedToday}/${dailyLimit} (ID: ${apiUser.id})`);
+  } catch (error) {
+    console.error(`[LINK-COUNTER] ERROR updating counter:`, error);
+    return res.status(500).json({ error: 'Failed to update link counter' });
   }
 
   const redirectId = public_id || generateId('r');
@@ -1854,6 +1874,38 @@ app.delete('/api/user-agent-patterns/:id', authMiddleware, adminMiddleware, (req
   if (!db.userAgentPatterns.has(req.params.id)) return res.status(404).json({ error: 'Not found' });
   db.userAgentPatterns.delete(req.params.id);
   res.status(204).send();
+});
+
+// ==========================================
+// DEBUG - Link Counter Status
+// ==========================================
+
+app.get('/api/debug/link-counter', authMiddleware, async (req, res) => {
+  try {
+    const apiUser = await db.apiUsers.findByEmail(req.user.email);
+    if (!apiUser) {
+      return res.status(404).json({ error: 'API user not found' });
+    }
+    
+    const today = new Date().toISOString().split('T')[0];
+    
+    res.json({
+      email: apiUser.email,
+      username: apiUser.username,
+      daily_link_limit: apiUser.daily_link_limit,
+      links_created_today: apiUser.links_created_today,
+      links_created_date: apiUser.links_created_date,
+      today: today,
+      is_same_day: apiUser.links_created_date === today,
+      actual_redirects_count: (await db.redirects.findByUserId(req.user.id)).filter(r => {
+        const createdDate = new Date(r.created_date).toISOString().split('T')[0];
+        return createdDate === today;
+      }).length
+    });
+  } catch (error) {
+    console.error('Debug link counter error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ==========================================
