@@ -15,6 +15,7 @@ if (process.env.NODE_ENV !== 'production') {
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
+import fs from 'fs';
 import { makeRedirectDecision } from './lib/redirectDecisionEngine.js';
 import { getClientIP } from './lib/ip2locationValidator.js';
 import { parseUserAgentDetails } from './lib/userAgentValidator.js';
@@ -104,12 +105,28 @@ async function initializeServer() {
     await testConnection();
     
     // 2. Initialize PostgreSQL database schema
-    console.log('\n[2/3] Initializing database schema...');
+    console.log('\n[2/4] Initializing database schema...');
     await db.initializeDatabase();
     console.log('      ✓ All tables ready');
 
-    // 3. Check if admin user exists
-    console.log('\n[3/3] Checking admin account...');
+    // 3. Run database migrations
+    console.log('\n[3/4] Running database migrations...');
+    try {
+      const migrationPath = path.join(__dirname, 'db', 'migrations', 'add_mailgun_domain_column.sql');
+      if (fs.existsSync(migrationPath)) {
+        const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
+        await db.query(migrationSQL);
+        console.log('      ✓ Migration completed: mailgun_domain column added');
+      } else {
+        console.log('      ⚠ Migration file not found (skipping)');
+      }
+    } catch (migError) {
+      console.error('      ⚠ Migration failed (non-fatal):', migError.message);
+      console.log('      → Column may already exist, continuing...');
+    }
+
+    // 4. Check if admin user exists
+    console.log('\n[4/4] Checking admin account...');
     const existingAdmin = await db.users.findByEmail('admin@example.com');
     const adminPassword = await hashPassword('admin123');
     
