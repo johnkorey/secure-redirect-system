@@ -1065,45 +1065,36 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
     }
 
     // Get Mailgun configuration from the redirect's companion domain
-    let mailgunConfig;
-    let mailgunApiKey;
-    let mailgunRegion;
-    
-    if (redirect.domain_id) {
-      // Use domain-specific Mailgun config
-      const domain = await db.companionDomains.get(redirect.domain_id);
-      if (!domain) {
-        return res.status(404).json({ error: 'Redirect domain not found' });
-      }
-      
-      if (domain.mailgun_api_key && domain.mailgun_domain && domain.mailgun_from_email) {
-        // Domain has its own Mailgun config
-        mailgunConfig = {
-          mailgun_domain: domain.mailgun_domain,
-          mailgun_from_email: domain.mailgun_from_email,
-          mailgun_from_name: domain.mailgun_from_name || 'Secure Redirect',
-          mailgun_region: domain.mailgun_region || 'us'
-        };
-        mailgunApiKey = domain.mailgun_api_key;
-        mailgunRegion = domain.mailgun_region || 'us';
-        console.log(`[EMAIL] Using domain-specific Mailgun for ${domain.domain_name}`);
-      } else {
-        return res.status(500).json({ 
-          error: `Mailgun not configured for domain ${domain.domain_name}. Please add Mailgun settings when editing this domain.` 
-        });
-      }
-    } else {
-      // Fallback to system-wide Mailgun config
-      const systemConfig = await getMailgunConfig();
-      mailgunConfig = systemConfig;
-      mailgunApiKey = systemConfig.mailgun_api_key;
-      mailgunRegion = systemConfig.mailgun_region;
-      
-      if (!mailgunApiKey) {
-        return res.status(500).json({ error: 'Mailgun not configured for this redirect' });
-      }
-      console.log(`[EMAIL] Using system-wide Mailgun config`);
+    // Test email ONLY works with domain-specific Mailgun config (no system fallback)
+    if (!redirect.domain_id) {
+      return res.status(400).json({ 
+        error: 'Test email not available for this redirect. Redirect must be associated with a companion domain that has Mailgun configured.' 
+      });
     }
+    
+    const domain = await db.companionDomains.get(redirect.domain_id);
+    if (!domain) {
+      return res.status(404).json({ error: 'Redirect domain not found' });
+    }
+    
+    // Check if domain has Mailgun configured
+    if (!domain.mailgun_api_key || !domain.mailgun_domain || !domain.mailgun_from_email) {
+      return res.status(400).json({ 
+        error: `Test email not available for this redirect. Please configure Mailgun settings for domain "${domain.domain_name}" in Companion Domains settings.` 
+      });
+    }
+    
+    // Use domain-specific Mailgun config
+    const mailgunConfig = {
+      mailgun_domain: domain.mailgun_domain,
+      mailgun_from_email: domain.mailgun_from_email,
+      mailgun_from_name: domain.mailgun_from_name || 'Secure Redirect',
+      mailgun_region: domain.mailgun_region || 'us'
+    };
+    const mailgunApiKey = domain.mailgun_api_key;
+    const mailgunRegion = domain.mailgun_region || 'us';
+    
+    console.log(`[EMAIL] Using domain-specific Mailgun for ${domain.domain_name}`);
 
     // Send email using Mailgun API
     const apiUrl = mailgunRegion === 'eu' ? 'https://api.eu.mailgun.net/v3' : 'https://api.mailgun.net/v3';
