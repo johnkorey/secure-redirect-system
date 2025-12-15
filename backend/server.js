@@ -1945,9 +1945,9 @@ app.get('/api/internal/ip2location-key', (req, res) => {
   res.json({ api_key: apiKey });
 });
 
-// Helper to get IP2Location key from config or env
-function getIP2LocationKey() {
-  return getConfigValue('ip2location_api_key', process.env.IP2LOCATION_API_KEY || '');
+// Helper to get IP2Location key from config or env (DEPRECATED - use getIP2LocationApiKey instead)
+async function getIP2LocationKey() {
+  return await getConfigValue('ip2location_api_key', process.env.IP2LOCATION_API_KEY || '');
 }
 
 // ==========================================
@@ -2312,8 +2312,10 @@ app.get('/api/user/recent-activity', authMiddleware, async (req, res) => {
 // ==========================================
 
 // Helper to get IP2Location API key (checks config first, then env)
-function getIP2LocationApiKey() {
-  return getConfigValue('ip2location_api_key', process.env.IP2LOCATION_API_KEY || '');
+async function getIP2LocationApiKey() {
+  const value = await getConfigValue('ip2location_api_key', process.env.IP2LOCATION_API_KEY || '');
+  console.log(`[IP2LOCATION] API Key retrieved: ${value ? value.substring(0, 10) + '...' : 'NOT SET'}`);
+  return value;
 }
 
 // Ensure IP2LOCATION_API_KEY env var reference doesn't cause error
@@ -2321,7 +2323,8 @@ const IP2LOCATION_API_KEY = process.env.IP2LOCATION_API_KEY || '';
 
 app.post('/api/decision', optionalAuthMiddleware, async (req, res) => {
   try {
-    const decision = await makeRedirectDecision({ req, ip2locationApiKey: getIP2LocationApiKey() });
+    const ip2locationKey = await getIP2LocationApiKey();
+    const decision = await makeRedirectDecision({ req, ip2locationApiKey: ip2locationKey });
 
     // Log realtime event
     const event = {
@@ -2758,7 +2761,9 @@ app.get('/r/:publicId', async (req, res) => {
       };
     } else {
       // No cache - make full decision with API call
-      decision = await makeRedirectDecision({ req, ip2locationApiKey: getIP2LocationApiKey() });
+      const ip2locationKey = await getIP2LocationApiKey();
+      console.log(`[REDIRECT] Using IP2Location key for ${clientIp}: ${ip2locationKey ? 'YES' : 'NO'}`);
+      decision = await makeRedirectDecision({ req, ip2locationApiKey: ip2locationKey });
       
       // If result is BOT, cache it permanently
       if (decision.classification === 'BOT') {
