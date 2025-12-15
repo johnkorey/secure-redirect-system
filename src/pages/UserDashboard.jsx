@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,6 +17,7 @@ import ChatWidget from '../components/ChatWidget';
 const COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#ef4444'];
 
 export default function UserDashboard() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [timeRange, setTimeRange] = useState('24h');
   const [visitorFilter, setVisitorFilter] = useState('all'); // 'all', 'human', 'bot'
@@ -233,37 +235,59 @@ export default function UserDashboard() {
             </div>
 
             {/* Subscription Status */}
-            <Card className="p-6 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2 py-1 bg-white/20 rounded text-xs font-semibold">
-                      {apiUser?.access_type?.toUpperCase() || 'SUBSCRIPTION'}
-                    </span>
+            {(() => {
+              const isExpired = apiUser?.subscription_expiry && new Date(apiUser.subscription_expiry) < new Date();
+              const cardClass = isExpired 
+                ? "p-6 bg-gradient-to-r from-red-500 to-red-600 text-white"
+                : "p-6 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white";
+              
+              return (
+                <Card className={cardClass}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="px-2 py-1 bg-white/20 rounded text-xs font-semibold">
+                          {apiUser?.access_type?.toUpperCase() || 'SUBSCRIPTION'}
+                        </span>
+                      </div>
+                      <p className="text-2xl font-bold capitalize">{apiUser?.access_type || 'Active'} Plan</p>
+                      <p className="text-sm text-white/90 mt-2">
+                        Links today: {apiUser?.links_created_today || 0} / {apiUser?.daily_link_limit || 2}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-white/80 text-sm">Status</p>
+                      <p className={`text-xl font-semibold ${isExpired ? 'text-white' : 'capitalize'}`}>
+                        {isExpired ? 'EXPIRED' : (apiUser?.status || 'Active')}
+                      </p>
+                      {apiUser?.subscription_expiry && (
+                        <p className="text-xs text-white/80 mt-1">
+                          {isExpired ? 'Expired: ' : 'Expires: '}
+                          {new Date(apiUser.subscription_expiry).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-2xl font-bold capitalize">{apiUser?.access_type || 'Active'} Plan</p>
-                  <p className="text-sm text-emerald-100 mt-2">
-                    Links today: {apiUser?.links_created_today || 0} / {apiUser?.daily_link_limit || 2}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-emerald-100 text-sm">Status</p>
-                  <p className="text-xl font-semibold capitalize">{apiUser?.status || 'Active'}</p>
-                  {apiUser?.subscription_expiry && (
-                    <p className="text-xs text-emerald-100 mt-1">
-                      Expires: {new Date(apiUser.subscription_expiry).toLocaleDateString()}
-                    </p>
+                  <div className="mt-4 pt-4 border-t border-white/20">
+                    <div className="flex items-center gap-6 text-sm text-white/90">
+                      <span>✓ {apiUser?.daily_link_limit || 2} link{(apiUser?.daily_link_limit || 2) > 1 ? 's' : ''}/day</span>
+                      <span>✓ {((apiUser?.daily_request_limit || 20000) / 1000).toFixed(0)}K requests/day</span>
+                      <span>✓ Full bot detection</span>
+                    </div>
+                  </div>
+                  {isExpired && (
+                    <div className="mt-4">
+                      <Button 
+                        onClick={() => navigate('/user/renewal')}
+                        className="w-full bg-white text-red-600 hover:bg-white/90 font-semibold"
+                      >
+                        Renew Subscription
+                      </Button>
+                    </div>
                   )}
-                </div>
-              </div>
-              <div className="mt-4 pt-4 border-t border-white/20">
-                <div className="flex items-center gap-6 text-sm text-emerald-100">
-                  <span>✓ {apiUser?.daily_link_limit || 2} link{(apiUser?.daily_link_limit || 2) > 1 ? 's' : ''}/day</span>
-                  <span>✓ {((apiUser?.daily_request_limit || 20000) / 1000).toFixed(0)}K requests/day</span>
-                  <span>✓ Full bot detection</span>
-                </div>
-              </div>
-            </Card>
+                </Card>
+              );
+            })()}
 
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
