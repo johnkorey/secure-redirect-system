@@ -2511,6 +2511,19 @@ app.post('/api/public/classify', async (req, res) => {
   }
   
   try {
+    // Parse user agent to check browser and device
+    const deviceInfo = parseUserAgentDetails(userAgent);
+    
+    // BLOCK visitors with Unknown browser AND device (likely malformed requests or invalid bots)
+    if (deviceInfo.browser === 'Unknown' && deviceInfo.device === 'Unknown') {
+      console.log(`[BLOCK] Rejected visitor with Unknown browser and device - IP: ${ip}, UA: ${userAgent.substring(0, 50)}...`);
+      return res.status(403).json({ 
+        error: 'Blocked',
+        classification: 'blocked',
+        reason: 'Invalid or malformed user agent - no browser or device detected'
+      });
+    }
+    
     const decision = await makeRedirectDecision(ip, userAgent);
     res.json({
       classification: decision.targetUrl === 'human' ? 'human' : 'bot',

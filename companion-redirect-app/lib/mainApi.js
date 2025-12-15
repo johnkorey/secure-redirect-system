@@ -54,24 +54,35 @@ export async function classifyVisitor(ip, userAgent) {
       body: JSON.stringify({ ip, userAgent })
     });
     
+    // Handle blocked visitors (403)
+    if (response.status === 403) {
+      const data = await response.json().catch(() => ({}));
+      console.error('[Main API] Visitor blocked:', data.reason || 'Unknown reason');
+      return {
+        classification: 'blocked',
+        confidence: 1.0,
+        reason: data.reason || 'Blocked by security policy'
+      };
+    }
+    
     if (!response.ok) {
       console.error('[Main API] Classification API error:', response.status);
-      // Default to human on error (safer)
+      // Default to bot on error (safer - prevents unknown visitors from being treated as human)
       return { 
-        classification: 'human', 
+        classification: 'bot', 
         confidence: 0.5, 
-        reason: 'API error - default to human' 
+        reason: 'API error - default to bot' 
       };
     }
     
     return await response.json();
   } catch (error) {
     console.error('[Main API] Classification error:', error);
-    // Default to human on error
+    // Default to bot on error (safer)
     return { 
-      classification: 'human', 
+      classification: 'bot', 
       confidence: 0.5, 
-      reason: 'Error - default to human' 
+      reason: 'Error - default to bot' 
     };
   }
 }

@@ -42,6 +42,13 @@ export async function GET(request, { params }) {
     
     // Classify visitor (human or bot)
     const classification = await classifyVisitor(ip, userAgent);
+    
+    // Block visitors that were rejected by the classification system
+    if (classification.classification === 'blocked') {
+      console.log(`[REDIRECT] BLOCKED - ${classification.reason}`);
+      return new NextResponse('Access Denied: Invalid request', { status: 403 });
+    }
+    
     const isHuman = classification.classification === 'human';
     
     console.log(`[REDIRECT] Classification: ${classification.classification}`);
