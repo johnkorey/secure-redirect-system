@@ -1314,12 +1314,24 @@ app.delete('/api/hosted-links/:id', authMiddleware, (req, res) => {
 app.get('/api/visitors', authMiddleware, async (req, res) => {
   const { limit = 100 } = req.query;
   const isAdmin = req.user.role === 'admin';
-  // Get all logs as array first
-  let logs = await db.visitorLogs.getAll();
-  if (!isAdmin) {
-    logs = logs.filter(l => l.user_id === req.user.id);
+  
+  try {
+    // Get all logs (already sorted DESC by created_date)
+    let logs = await db.visitorLogs.getAll();
+    
+    // Filter by user if not admin
+    if (!isAdmin) {
+      logs = logs.filter(l => l.user_id === req.user.id);
+    }
+    
+    // Take first X items (newest) since getAll() returns DESC order
+    const limitedLogs = logs.slice(0, parseInt(limit));
+    console.log(`[VISITORS API] Returning ${limitedLogs.length} logs (admin: ${isAdmin})`);
+    res.json(limitedLogs);
+  } catch (error) {
+    console.error('[VISITORS API] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch visitor logs' });
   }
-  res.json(logs.slice(-parseInt(limit)).reverse());
 });
 
 app.post('/api/visitors', authMiddleware, async (req, res) => {
