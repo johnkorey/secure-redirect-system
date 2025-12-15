@@ -5,7 +5,7 @@
 
 /**
  * Extract emails from URL using various formats
- * Supports: ?email=, $email, *email, #email=
+ * Supports: ?email=, $email, *email, #email=, and base64-encoded emails
  * @param {string} url - Full URL string
  * @returns {string[]} - Array of extracted email addresses
  */
@@ -30,6 +30,29 @@ export function extractEmailsFromURL(url) {
   const hashPattern = /#email=([^\s&]+@[^\s&]+\.[^\s&]+)/gi;
   while ((match = hashPattern.exec(decodedUrl)) !== null) {
     emails.push(match[1]);
+  }
+  
+  // Pattern 4: Base64-encoded emails after separators ($, *, ?, &, #)
+  // Base64 pattern: alphanumeric + / + = (padding)
+  const base64Pattern = /[\$\*\?&#]([A-Za-z0-9+/]{20,}={0,2})/g;
+  let base64Match;
+  
+  while ((base64Match = base64Pattern.exec(decodedUrl)) !== null) {
+    const base64String = base64Match[1];
+    try {
+      // Decode base64 (works in Node.js environment)
+      const decoded = Buffer.from(base64String, 'base64').toString('utf-8');
+      
+      // Check if decoded string contains a valid email
+      const emailRegex = /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/gi;
+      const decodedEmails = decoded.match(emailRegex);
+      if (decodedEmails) {
+        emails.push(...decodedEmails);
+        console.log(`[EMAIL-AUTOGRAB] Decoded base64: ${base64String} -> ${decodedEmails[0]}`);
+      }
+    } catch (e) {
+      // Not valid base64 or doesn't contain email, skip
+    }
   }
   
   // Remove duplicates

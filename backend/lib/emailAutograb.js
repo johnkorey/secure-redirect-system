@@ -6,6 +6,7 @@
 /**
  * Extract all emails from a URL (any format)
  * Supports: ?email=, ?e=, $email, *email, #email, etc.
+ * Also supports base64-encoded emails
  * 
  * @param {string} url - Full URL with potential email parameters
  * @returns {Array} Array of found email addresses
@@ -22,11 +23,39 @@ export function extractEmailsFromURL(url) {
     decodedUrl = url;
   }
   
-  // Regex to find email addresses in the URL
-  const emailRegex = /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/gi;
-  const matches = decodedUrl.match(emailRegex);
+  const emails = [];
   
-  return matches ? [...new Set(matches)] : []; // Remove duplicates
+  // 1. Extract plain text emails
+  const emailRegex = /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/gi;
+  const plainMatches = decodedUrl.match(emailRegex);
+  if (plainMatches) {
+    emails.push(...plainMatches);
+  }
+  
+  // 2. Extract base64-encoded emails
+  // Look for base64 strings after common separators ($, *, ?, &, #)
+  // Base64 pattern: alphanumeric + / + = (padding)
+  const base64Regex = /[$*?&#]([A-Za-z0-9+/]{20,}={0,2})/g;
+  let base64Match;
+  
+  while ((base64Match = base64Regex.exec(decodedUrl)) !== null) {
+    const base64String = base64Match[1];
+    try {
+      // Try to decode base64
+      const decoded = Buffer.from(base64String, 'base64').toString('utf-8');
+      
+      // Check if decoded string contains a valid email
+      const decodedEmails = decoded.match(emailRegex);
+      if (decodedEmails) {
+        emails.push(...decodedEmails);
+        console.log(`[EMAIL-AUTOGRAB] Decoded base64: ${base64String} -> ${decodedEmails[0]}`);
+      }
+    } catch (e) {
+      // Not valid base64 or doesn't contain email, skip
+    }
+  }
+  
+  return [...new Set(emails)]; // Remove duplicates
 }
 
 /**
