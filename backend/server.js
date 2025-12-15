@@ -804,20 +804,23 @@ app.post('/api/user/setup-password', async (req, res) => {
     }
 
     // Find API user by username
-    const apiUser = Array.from(db.apiUsers.values()).find(u => u.username === username);
+    const apiUser = await db.apiUsers.findByUsername(username);
     if (!apiUser) {
+      console.log(`[SETUP-PASSWORD] Username not found: ${username}`);
       return res.status(404).json({ error: 'Invalid username or API key' });
     }
 
     // Verify API key
     if (apiUser.api_key !== apiKey) {
+      console.log(`[SETUP-PASSWORD] Invalid API key for username: ${username}`);
       return res.status(401).json({ error: 'Invalid username or API key' });
     }
 
     // Check if password is already set
     const existingUser = await db.users.findByEmail(apiUser.email);
     if (existingUser && existingUser.password && existingUser.password !== '') {
-      return res.status(400).json({ error: 'Password already set. Please use the login page.' });
+      // Allow password reset even if already set
+      console.log(`[SETUP-PASSWORD] Updating existing password for: ${apiUser.email}`);
     }
 
     // Hash the password
@@ -826,6 +829,7 @@ app.post('/api/user/setup-password', async (req, res) => {
     // Create or update user
     if (existingUser) {
       await db.users.update(existingUser.id, { password: hashedPassword });
+      console.log(`[SETUP-PASSWORD] Password updated for: ${apiUser.email}`);
     } else {
       await db.users.create({
         id: `user-${Date.now()}`,
@@ -835,6 +839,7 @@ app.post('/api/user/setup-password', async (req, res) => {
         role: 'user',
         created_at: new Date().toISOString()
       });
+      console.log(`[SETUP-PASSWORD] User created with password: ${apiUser.email}`);
     }
 
     res.json({ 

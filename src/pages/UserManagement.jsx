@@ -27,6 +27,7 @@ export default function UserManagement() {
   const [editUser, setEditUser] = useState(null);
   const [showDialog, setShowDialog] = useState(false);
   const [deleteUser, setDeleteUser] = useState(null);
+  const [newUserCredentials, setNewUserCredentials] = useState(null);
   const queryClient = useQueryClient();
 
   const { data: users = [] } = useQuery({
@@ -46,7 +47,8 @@ export default function UserManagement() {
       queryClient.invalidateQueries({ queryKey: ['api-users'] });
       setShowDialog(false);
       setEditUser(null);
-      toast.success(`User created! API Key: ${newUser.api_key}`, { duration: 10000 });
+      setNewUserCredentials(newUser);
+      toast.success('User created successfully!');
     },
     onError: (error) => {
       console.error('Create user error:', error);
@@ -101,8 +103,67 @@ export default function UserManagement() {
     expired: 'bg-red-100 text-red-700'
   };
 
+  const copyToClipboard = (text, label) => {
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} copied to clipboard!`);
+  };
+
   return (
     <div className="p-6 space-y-6">
+      {/* New User Credentials Dialog */}
+      <AlertDialog open={!!newUserCredentials} onOpenChange={() => setNewUserCredentials(null)}>
+        <AlertDialogContent className="max-w-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-2xl">User Created Successfully! 🎉</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-4 pt-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <p className="text-amber-800 font-semibold mb-2">⚠️ Important: Save these credentials now!</p>
+                <p className="text-amber-700 text-sm">The API key will not be shown again. The user will need these to set up their password.</p>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="bg-slate-50 border rounded-lg p-4">
+                  <Label className="text-xs text-slate-500 uppercase tracking-wide">Username</Label>
+                  <div className="flex items-center justify-between mt-2">
+                    <code className="text-lg font-mono font-semibold">{newUserCredentials?.username}</code>
+                    <Button size="sm" variant="outline" onClick={() => copyToClipboard(newUserCredentials?.username, 'Username')}>
+                      <Copy className="w-4 h-4 mr-1" />
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+                
+                <div className="bg-slate-50 border rounded-lg p-4">
+                  <Label className="text-xs text-slate-500 uppercase tracking-wide">API Key</Label>
+                  <div className="flex items-center justify-between mt-2">
+                    <code className="text-sm font-mono break-all">{newUserCredentials?.api_key}</code>
+                    <Button size="sm" variant="outline" onClick={() => copyToClipboard(newUserCredentials?.api_key, 'API Key')} className="ml-2 flex-shrink-0">
+                      <Copy className="w-4 h-4 mr-1" />
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+                
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <Label className="text-xs text-blue-700 uppercase tracking-wide font-semibold">Setup Instructions</Label>
+                  <ol className="text-sm text-blue-800 mt-2 space-y-1 list-decimal list-inside">
+                    <li>Send the username and API key to the user</li>
+                    <li>User goes to: <code className="bg-white px-2 py-0.5 rounded">/user/setup</code></li>
+                    <li>User enters username, API key, and creates a password</li>
+                    <li>User can then login normally</li>
+                  </ol>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setNewUserCredentials(null)}>
+              I've saved the credentials
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 mb-2">User Management</h1>
