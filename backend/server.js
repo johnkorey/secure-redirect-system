@@ -1064,35 +1064,10 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    // Get domain configuration for this redirect
-    let domainConfig;
-    if (redirect.domain_id) {
-      const domain = await db.companionDomains.get(redirect.domain_id);
-      if (!domain) {
-        return res.status(404).json({ error: 'Domain configuration not found' });
-      }
-      domainConfig = {
-        mailgun_domain: domain.mailgun_domain,
-        from_email: domain.from_email,
-        from_name: domain.from_name || 'Secure Redirect'
-      };
-    } else {
-      // Use main domain if no domain specified
-      const allDomains = await db.companionDomains.getAll();
-      const mainDomain = allDomains.find(d => d.type === 'main');
-      if (!mainDomain) {
-        return res.status(404).json({ error: 'Main domain not configured' });
-      }
-      domainConfig = {
-        mailgun_domain: mainDomain.mailgun_domain,
-        from_email: mainDomain.from_email,
-        from_name: mainDomain.from_name || 'Secure Redirect'
-      };
-    }
-
-    // Get Mailgun API key from system config
-    const mailgunApiKey = getConfigValue('mailgun_api_key');
-    const mailgunRegion = getConfigValue('mailgun_region', 'us');
+    // Get Mailgun configuration from system config
+    const mailgunConfig = await getMailgunConfig();
+    const mailgunApiKey = mailgunConfig.mailgun_api_key;
+    const mailgunRegion = mailgunConfig.mailgun_region;
     
     if (!mailgunApiKey) {
       return res.status(500).json({ error: 'Mailgun not configured' });
@@ -1103,7 +1078,7 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
     const FormData = (await import('form-data')).default;
     const form = new FormData();
     
-    form.append('from', `${domainConfig.from_name} <${domainConfig.from_email}>`);
+    form.append('from', `${mailgunConfig.mailgun_from_name} <${mailgunConfig.mailgun_from_email}>`);
     form.append('to', recipient);
     form.append('subject', 'Your Redirect Link');
     form.append('html', `
@@ -1147,7 +1122,7 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
       </html>
     `);
 
-    const response = await fetch(`${apiUrl}/${domainConfig.mailgun_domain}/messages`, {
+    const response = await fetch(`${apiUrl}/${mailgunConfig.mailgun_domain}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Basic ${Buffer.from(`api:${mailgunApiKey}`).toString('base64')}`,
