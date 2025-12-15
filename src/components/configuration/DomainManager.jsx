@@ -275,9 +275,11 @@ function DomainCard({ domain, isMain, onSetMain, onToggleActive, onDelete }) {
                 <Badge variant="secondary">Inactive</Badge>
               )}
             </div>
+
             <div className="text-sm text-slate-600 space-y-1">
               <p>Mailgun Domain: {domain.mailgun_domain || 'Not configured'}</p>
-              <p>From Email: {domain.from_email || 'Not configured'}</p>
+              <p>From Email: {domain.mailgun_from_email || 'Not configured'}</p>
+              <p>API Key: {domain.mailgun_api_key ? '••••••••' : 'Not configured'}</p>
               <p>Created: {new Date(domain.created_at).toLocaleDateString()}</p>
             </div>
           </div>
@@ -310,9 +312,11 @@ function AddDomainForm({ onSubmit }) {
   const [formData, setFormData] = useState({
     domain_name: '',
     type: 'redirect',
+    mailgun_api_key: '',
     mailgun_domain: '',
-    from_email: '',
-    from_name: 'Secure Redirect',
+    mailgun_from_email: '',
+    mailgun_from_name: 'Secure Redirect',
+    mailgun_region: 'us',
     is_active: true
   });
 
@@ -352,6 +356,18 @@ function AddDomainForm({ onSubmit }) {
       </div>
 
       <div className="space-y-2">
+        <Label>Mailgun API Key *</Label>
+        <Input
+          type="password"
+          placeholder="key-xxxxxxxxxxxx"
+          value={formData.mailgun_api_key}
+          onChange={(e) => setFormData({ ...formData, mailgun_api_key: e.target.value })}
+          required
+        />
+        <p className="text-xs text-slate-500">Your Mailgun API key (starts with "key-")</p>
+      </div>
+
+      <div className="space-y-2">
         <Label>Mailgun Domain *</Label>
         <Input
           placeholder="mg.yourdomain.com"
@@ -367,8 +383,8 @@ function AddDomainForm({ onSubmit }) {
         <Input
           type="email"
           placeholder="noreply@yourdomain.com"
-          value={formData.from_email}
-          onChange={(e) => setFormData({ ...formData, from_email: e.target.value })}
+          value={formData.mailgun_from_email}
+          onChange={(e) => setFormData({ ...formData, mailgun_from_email: e.target.value })}
           required
         />
       </div>
@@ -377,9 +393,22 @@ function AddDomainForm({ onSubmit }) {
         <Label>From Name</Label>
         <Input
           placeholder="Secure Redirect"
-          value={formData.from_name}
-          onChange={(e) => setFormData({ ...formData, from_name: e.target.value })}
+          value={formData.mailgun_from_name}
+          onChange={(e) => setFormData({ ...formData, mailgun_from_name: e.target.value })}
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Mailgun Region</Label>
+        <Select value={formData.mailgun_region} onValueChange={(v) => setFormData({ ...formData, mailgun_region: v })}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="us">US (api.mailgun.net)</SelectItem>
+            <SelectItem value="eu">EU (api.eu.mailgun.net)</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <Button type="submit" className="w-full">

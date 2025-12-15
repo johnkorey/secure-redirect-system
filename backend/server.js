@@ -1064,7 +1064,7 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    // Get Mailgun configuration from the redirect's companion domain
+    // Get Mailgun configuration from the redirect's domain
     // Test email ONLY works with domain-specific Mailgun config (no system fallback)
     
     // Extract domain name from redirect's full URL
@@ -1080,22 +1080,41 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
     
     if (!domainName) {
       return res.status(400).json({ 
-        error: 'Test email not available for this redirect. Redirect must be associated with a companion domain that has Mailgun configured.' 
+        error: 'Test email not available for this redirect. Domain not found.' 
       });
     }
     
-    // Look up companion domain by name
-    const domain = await db.companionDomains.getByDomain(domainName);
+    // Look up domain in BOTH domains and companion_domains tables
+    let domain = null;
+    let domainSource = null;
+    
+    // First try companion_domains table
+    const companionDomain = await db.companionDomains.getByDomain(domainName);
+    if (companionDomain && companionDomain.mailgun_api_key) {
+      domain = companionDomain;
+      domainSource = 'companion';
+    }
+    
+    // If not found or no config, try regular domains table
+    if (!domain) {
+      const allDomains = await db.domains.list();
+      const regularDomain = allDomains.find(d => d.domain_name === domainName);
+      if (regularDomain && regularDomain.mailgun_api_key) {
+        domain = regularDomain;
+        domainSource = 'regular';
+      }
+    }
+    
     if (!domain) {
       return res.status(404).json({ 
-        error: `Companion domain "${domainName}" not found. Please add this domain in Admin → Companion Domains first.` 
+        error: `Domain "${domainName}" not found. Please add this domain in Configuration → Domains with Mailgun settings.` 
       });
     }
     
     // Check if domain has Mailgun configured
     if (!domain.mailgun_api_key || !domain.mailgun_domain || !domain.mailgun_from_email) {
       return res.status(400).json({ 
-        error: `Test email not available for this redirect. Please configure Mailgun settings for domain "${domain.domain_name}" in Companion Domains settings.` 
+        error: `Test email not available for domain "${domainName}". Please configure Mailgun settings (API Key, Domain, and From Email) in Configuration → Domains.` 
       });
     }
     
@@ -1108,6 +1127,8 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
     };
     const mailgunApiKey = domain.mailgun_api_key;
     const mailgunRegion = domain.mailgun_region || 'us';
+    
+    console.log(`[EMAIL] Using ${domainSource} domain Mailgun config for ${domainName}`);
     
     console.log(`[EMAIL] Using domain-specific Mailgun for ${domain.domain_name}`);
 
