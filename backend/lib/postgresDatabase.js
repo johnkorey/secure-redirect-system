@@ -352,6 +352,11 @@ export const visitorLogs = {
     return result.rows[0];
   },
 
+  async getAll() {
+    const result = await query('SELECT * FROM visitor_logs ORDER BY created_date DESC LIMIT 10000');
+    return result.rows;
+  },
+
   async filter(criteria) {
     const conditions = [];
     const values = [];
@@ -413,6 +418,11 @@ export const realtimeEvents = {
     await query('SELECT cleanup_realtime_events()');
     
     return result.rows[0];
+  },
+
+  async getAll() {
+    const result = await query('SELECT * FROM realtime_events ORDER BY created_date DESC LIMIT 1000');
+    return result.rows;
   },
 
   async list(limit = 100) {

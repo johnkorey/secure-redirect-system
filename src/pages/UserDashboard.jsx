@@ -171,7 +171,9 @@ export default function UserDashboard() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-slate-900">User Dashboard</h1>
-                <p className="text-sm text-slate-500">{apiUser?.username || 'Loading...'}</p>
+                <p className="text-sm text-slate-500">
+                  {apiUser?.username || apiUser?.display_name || currentUser?.full_name || currentUser?.email || 'User'}
+                </p>
               </div>
             </div>
             <Button variant="ghost" onClick={() => base44.auth.logout()}>

