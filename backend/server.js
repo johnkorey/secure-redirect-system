@@ -1131,10 +1131,21 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
       body: form
     });
 
-    const data = await response.json();
+    // Get response text first to handle both JSON and non-JSON responses
+    const responseText = await response.text();
+    let data;
+    
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      // Response is not JSON - likely an error
+      console.error('[EMAIL] Non-JSON response from Mailgun:', responseText.substring(0, 200));
+      throw new Error(`Mailgun API error: ${response.status} ${response.statusText}. Check Mailgun configuration.`);
+    }
 
     if (!response.ok) {
-      throw new Error(data.message || 'Failed to send email');
+      console.error('[EMAIL] Mailgun error:', data);
+      throw new Error(data.message || `Failed to send email: ${response.status} ${response.statusText}`);
     }
 
     console.log(`[EMAIL] Test email sent for redirect ${redirect_id} to ${recipient}`);
