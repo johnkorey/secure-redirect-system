@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Copy, Trash2, Mail, ExternalLink, Send, Edit } from 'lucide-react';
+import { Plus, Copy, Trash2, Mail, ExternalLink, Edit } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Detect backend URL
@@ -38,11 +38,9 @@ const apiFetch = async (endpoint, options = {}) => {
 
 export default function HostedLinksManager({ apiUser }) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [sendTestDialogOpen, setSendTestDialogOpen] = useState(null);
   const [editDialogOpen, setEditDialogOpen] = useState(null);
   const [newLink, setNewLink] = useState({ domain_id: '', humanUrl: '', botUrl: '' });
   const [editLink, setEditLink] = useState({ humanUrl: '', botUrl: '' });
-  const [testEmail, setTestEmail] = useState('');
   const queryClient = useQueryClient();
 
   // Fetch active redirect domains
@@ -116,34 +114,9 @@ export default function HostedLinksManager({ apiUser }) {
     }
   });
 
-  const sendTestEmailMutation = useMutation({
-    mutationFn: ({ redirectId, recipient }) => {
-      return apiFetch('/api/user/send-test-email', {
-        method: 'POST',
-        body: JSON.stringify({ redirect_id: redirectId, recipient })
-      });
-    },
-    onSuccess: () => {
-      toast.success('Test email sent successfully!');
-      setSendTestDialogOpen(null);
-      setTestEmail('');
-    },
-    onError: (error) => {
-      toast.error(error.message || 'Failed to send test email');
-    }
-  });
-
   const copyLink = (fullUrl) => {
     navigator.clipboard.writeText(fullUrl);
     toast.success('Link copied to clipboard!');
-  };
-
-  const handleSendTest = (redirect) => {
-    if (!testEmail) {
-      toast.error('Please enter an email address');
-      return;
-    }
-    sendTestEmailMutation.mutate({ redirectId: redirect.id, recipient: testEmail });
   };
 
   const handleEditOpen = (redirect) => {
@@ -352,51 +325,6 @@ export default function HostedLinksManager({ apiUser }) {
                     </DialogContent>
                   </Dialog>
 
-                  {/* Send Test Email */}
-                  <Dialog 
-                    open={sendTestDialogOpen === redirect.id} 
-                    onOpenChange={(open) => setSendTestDialogOpen(open ? redirect.id : null)}
-                  >
-                    <DialogTrigger asChild>
-                      <Button size="sm" variant="outline" className="text-blue-600">
-                        <Send className="w-3 h-3 mr-1" />
-                        Send Test
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Send Test Email</DialogTitle>
-                        <DialogDescription>
-                          Send a test email with your redirect link from {redirect.domain_name || 'system domain'}
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                          <p className="text-sm font-medium text-blue-900 mb-2">This is your redirect link:</p>
-                          <code className="text-xs text-blue-700 break-all">
-                            {redirect.full_url || `${window.location.origin}/r/${redirect.public_id}`}
-                          </code>
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Recipient Email *</Label>
-                          <Input
-                            type="email"
-                            value={testEmail}
-                            onChange={(e) => setTestEmail(e.target.value)}
-                            placeholder="test@example.com"
-                          />
-                        </div>
-                        <Button 
-                          onClick={() => handleSendTest(redirect)} 
-                          disabled={!testEmail || sendTestEmailMutation.isPending}
-                          className="w-full"
-                        >
-                          {sendTestEmailMutation.isPending ? 'Sending...' : 'Send Test Email'}
-                        </Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                  
                   <Button
                     size="sm"
                     variant="outline"
