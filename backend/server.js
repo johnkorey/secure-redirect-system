@@ -951,7 +951,7 @@ app.post('/api/api-users', authMiddleware, adminMiddleware, async (req, res) => 
         password: await hashPassword(`temp_${Date.now()}`), // Temporary password
         full_name: username,
         role: 'user',
-        created_at: new Date()
+        created_at: new Date().toISOString()
       });
       console.log(`[CREATE] Created user account for: ${email}`);
     }
@@ -981,7 +981,7 @@ app.post('/api/api-users', authMiddleware, adminMiddleware, async (req, res) => 
       telegram_chat_id: req.body.telegram_chat_id || null,
       display_name: req.body.display_name || username,
       referral_code: req.body.referral_code || `REF${Date.now().toString(36).toUpperCase()}`,
-      created_at: new Date()
+      created_at: new Date().toISOString()
     };
     
     const created = await db.apiUsers.create(apiUser);
@@ -994,9 +994,14 @@ app.post('/api/api-users', authMiddleware, adminMiddleware, async (req, res) => 
 });
 
 app.get('/api/api-users/:id', authMiddleware, adminMiddleware, async (req, res) => {
-  const user = await db.apiUsers.findById(req.params.id);
-  if (!user) return res.status(404).json({ error: 'API user not found' });
-  res.json(user);
+  try {
+    const user = await db.apiUsers.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'API user not found' });
+    res.json(user);
+  } catch (error) {
+    console.error('Get API user error:', error);
+    res.status(500).json({ error: 'Failed to retrieve user' });
+  }
 });
 
 app.put('/api/api-users/:id', authMiddleware, adminMiddleware, async (req, res) => {
