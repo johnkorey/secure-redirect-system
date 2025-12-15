@@ -141,6 +141,10 @@ export const base44 = {
   auth: {
     me: () => apiFetch('/api/auth/me'),
     isLoggedIn: () => !!getToken(),
+    logout: () => {
+      localStorage.removeItem('token');
+      window.location.href = '/user/login';
+    },
   },
 };
 
