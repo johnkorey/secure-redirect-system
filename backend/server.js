@@ -934,10 +934,39 @@ app.get('/api/api-users', authMiddleware, adminMiddleware, async (req, res) => {
 
 app.post('/api/api-users', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    const { username, email } = req.body;
+    
+    if (!username || !email) {
+      return res.status(400).json({ error: 'Username and email are required' });
+    }
+    
+    // Check if user account already exists
+    let userAccount = await db.users.findByEmail(email.toLowerCase());
+    
+    // If not, create a basic user account first (required by foreign key constraint)
+    if (!userAccount) {
+      userAccount = await db.users.create({
+        id: generateId('user'),
+        email: email.toLowerCase(),
+        password: await hashPassword(`temp_${Date.now()}`), // Temporary password
+        full_name: username,
+        role: 'user',
+        created_at: new Date()
+      });
+      console.log(`[CREATE] Created user account for: ${email}`);
+    }
+    
+    // Check if API user already exists
+    const existingApiUser = await db.apiUsers.findByEmail(email.toLowerCase());
+    if (existingApiUser) {
+      return res.status(400).json({ error: 'API user with this email already exists' });
+    }
+    
+    // Create API user
     const apiUser = {
       id: generateId('apiuser'),
-      username: req.body.username,
-      email: req.body.email,
+      username: username,
+      email: email.toLowerCase(),
       api_key: req.body.api_key || `ak_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       access_type: req.body.access_type || 'free',
       status: req.body.status || 'active',
@@ -947,18 +976,20 @@ app.post('/api/api-users', authMiddleware, adminMiddleware, async (req, res) => 
       links_created_date: null,
       current_usage: 0,
       credits: req.body.credits || 0,
-      subscription_start: req.body.subscription_start || null,
-      subscription_expiry: req.body.subscription_expiry || null,
+      subscription_start: req.body.subscription_start ? new Date(req.body.subscription_start) : null,
+      subscription_expiry: req.body.subscription_expiry ? new Date(req.body.subscription_expiry) : null,
       telegram_chat_id: req.body.telegram_chat_id || null,
-      display_name: req.body.display_name || req.body.username,
+      display_name: req.body.display_name || username,
       referral_code: req.body.referral_code || `REF${Date.now().toString(36).toUpperCase()}`,
       created_at: new Date()
     };
+    
     const created = await db.apiUsers.create(apiUser);
+    console.log(`[CREATE] Created API user: ${email}`);
     res.status(201).json(created);
   } catch (error) {
     console.error('Create API user error:', error);
-    res.status(500).json({ error: 'Failed to create user' });
+    res.status(500).json({ error: error.message || 'Failed to create user' });
   }
 });
 

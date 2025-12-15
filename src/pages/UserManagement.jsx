@@ -48,6 +48,10 @@ export default function UserManagement() {
       setEditUser(null);
       toast.success(`User created! API Key: ${newUser.api_key}`, { duration: 10000 });
     },
+    onError: (error) => {
+      console.error('Create user error:', error);
+      toast.error(error.message || 'Failed to create user');
+    }
   });
 
   const updateMutation = useMutation({
@@ -58,6 +62,10 @@ export default function UserManagement() {
       setEditUser(null);
       toast.success('User updated');
     },
+    onError: (error) => {
+      console.error('Update user error:', error);
+      toast.error(error.message || 'Failed to update user');
+    }
   });
 
   const deleteMutation = useMutation({
@@ -227,7 +235,7 @@ function UserForm({ user, onSave }) {
     email: '',
     access_type: 'free',
     status: 'active',
-    daily_limit: 1000,
+    daily_link_limit: 2,
     subscription_start: '',
     subscription_expiry: '',
     display_name: '',
@@ -290,11 +298,11 @@ function UserForm({ user, onSave }) {
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>Daily Limit</Label>
+          <Label>Daily Link Limit</Label>
           <Input
             type="number"
-            value={formData.daily_limit}
-            onChange={(e) => setFormData({ ...formData, daily_limit: parseInt(e.target.value) })}
+            value={formData.daily_link_limit}
+            onChange={(e) => setFormData({ ...formData, daily_link_limit: parseInt(e.target.value) })}
           />
         </div>
         <div className="space-y-2">
