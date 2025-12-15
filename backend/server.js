@@ -1142,12 +1142,15 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
       mailgun_from_name: domain.mailgun_from_name || 'Secure Redirect',
       mailgun_region: domain.mailgun_region || 'us'
     };
-    const mailgunApiKey = domain.mailgun_api_key;
+    const mailgunApiKey = domain.mailgun_api_key.trim(); // Trim whitespace
     const mailgunRegion = domain.mailgun_region || 'us';
     
-    console.log(`[EMAIL] Using ${domainSource} domain Mailgun config for ${domainName}`);
-    
-    console.log(`[EMAIL] Using domain-specific Mailgun for ${domain.domain_name}`);
+    console.log(`[EMAIL] Test Email Configuration:`);
+    console.log(`[EMAIL] - Source: ${domainSource} domain (${domainName})`);
+    console.log(`[EMAIL] - Mailgun Domain: ${mailgunConfig.mailgun_domain}`);
+    console.log(`[EMAIL] - From: ${mailgunConfig.mailgun_from_name} <${mailgunConfig.mailgun_from_email}>`);
+    console.log(`[EMAIL] - API Key: ${mailgunApiKey.substring(0, 10)}... (${mailgunApiKey.length} chars)`);
+    console.log(`[EMAIL] - Region: ${mailgunRegion}`);
 
     // Send email using Mailgun API
     const apiUrl = mailgunRegion === 'eu' ? 'https://api.eu.mailgun.net/v3' : 'https://api.mailgun.net/v3';
@@ -1198,7 +1201,10 @@ app.post('/api/user/send-test-email', authMiddleware, async (req, res) => {
       </html>
     `);
 
-    const response = await fetch(`${apiUrl}/${mailgunConfig.mailgun_domain}/messages`, {
+    const mailgunUrl = `${apiUrl}/${mailgunConfig.mailgun_domain}/messages`;
+    console.log(`[EMAIL] Mailgun API URL: ${mailgunUrl}`);
+    
+    const response = await fetch(mailgunUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Basic ${Buffer.from(`api:${mailgunApiKey}`).toString('base64')}`,
