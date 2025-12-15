@@ -1769,6 +1769,12 @@ app.put('/api/domains/:id/set-main', authMiddleware, adminMiddleware, async (req
 // SECURITY: Only return domains with type='redirect', NOT the main domain
 app.get('/api/domains/active/redirect', authMiddleware, async (req, res) => {
   const allDomains = await db.domains.list();
+  
+  console.log(`[DOMAINS] Total domains in database: ${allDomains.length}`);
+  allDomains.forEach(d => {
+    console.log(`[DOMAINS] - ${d.domain_name}: type=${d.type}, is_active=${d.is_active}`);
+  });
+  
   const activeDomains = allDomains.filter(
     d => d.type === 'redirect' && d.is_active === true
   );

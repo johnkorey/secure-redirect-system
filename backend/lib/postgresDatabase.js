@@ -435,9 +435,9 @@ export const domains = {
         id, domain_name, domain_type, is_main, is_active,
         mailgun_api_key, mailgun_region, mailgun_from_email, mailgun_from_name, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING *`,
+      RETURNING *, domain_type as type`,
       [
-        domain.id, domain.domain_name, domain.domain_type || 'redirect',
+        domain.id, domain.domain_name, domain.type || domain.domain_type || 'redirect',
         domain.is_main || false, domain.is_active !== false,
         domain.mailgun_api_key, domain.mailgun_region, domain.mailgun_from_email,
         domain.mailgun_from_name, domain.created_at || new Date()
@@ -447,8 +447,12 @@ export const domains = {
   },
 
   async get(id) {
-    const result = await query('SELECT * FROM domains WHERE id = $1', [id]);
+    const result = await query('SELECT *, domain_type as type FROM domains WHERE id = $1', [id]);
     return result.rows[0] || null;
+  },
+
+  async findById(id) {
+    return await this.get(id);
   },
 
   async update(id, updates) {
@@ -456,7 +460,14 @@ export const domains = {
     const values = [];
     let paramCount = 1;
 
-    Object.entries(updates).forEach(([key, value]) => {
+    // Map 'type' to 'domain_type' if present
+    const mappedUpdates = { ...updates };
+    if (mappedUpdates.type) {
+      mappedUpdates.domain_type = mappedUpdates.type;
+      delete mappedUpdates.type;
+    }
+
+    Object.entries(mappedUpdates).forEach(([key, value]) => {
       fields.push(`${key} = $${paramCount}`);
       values.push(value);
       paramCount++;
@@ -464,7 +475,7 @@ export const domains = {
 
     values.push(id);
     const result = await query(
-      `UPDATE domains SET ${fields.join(', ')} WHERE id = $${paramCount} RETURNING *`,
+      `UPDATE domains SET ${fields.join(', ')} WHERE id = $${paramCount} RETURNING *, domain_type as type`,
       values
     );
     return result.rows[0];
@@ -476,7 +487,7 @@ export const domains = {
   },
 
   async list() {
-    const result = await query('SELECT * FROM domains ORDER BY created_at DESC');
+    const result = await query('SELECT *, domain_type as type FROM domains ORDER BY created_at DESC');
     return result.rows;
   },
 
