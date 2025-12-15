@@ -36,14 +36,27 @@ export default function UsageAnalytics() {
     };
   });
 
-  // User usage breakdown
-  const userUsageData = apiUsers
-    .sort((a, b) => (b.current_usage || 0) - (a.current_usage || 0))
-    .slice(0, 5)
-    .map(user => ({
-      name: user.username,
-      usage: user.current_usage || 0
-    }));
+  // User usage breakdown - calculate from actual visitor logs
+  const userUsageData = (() => {
+    // Count visitors per user_id
+    const usageCounts = {};
+    visitors.forEach(v => {
+      if (v.user_id) {
+        usageCounts[v.user_id] = (usageCounts[v.user_id] || 0) + 1;
+      }
+    });
+    
+    // Map to user data and sort by usage
+    return apiUsers
+      .map(user => ({
+        name: user.username || user.email,
+        usage: usageCounts[user.id] || 0,
+        userId: user.id
+      }))
+      .sort((a, b) => b.usage - a.usage)
+      .slice(0, 5)
+      .filter(u => u.usage > 0); // Only show users with actual usage
+  })();
 
   // Classification outcomes
   const outcomeData = [
@@ -178,16 +191,31 @@ export default function UsageAnalytics() {
 
         {/* Top Users */}
         <Card className="p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Top API Users</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={userUsageData} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis type="number" stroke="#64748b" />
-              <YAxis dataKey="name" type="category" stroke="#64748b" width={100} />
-              <Tooltip />
-              <Bar dataKey="usage" fill="#8b5cf6" name="API Calls" />
-            </BarChart>
-          </ResponsiveContainer>
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">
+            Top API Users
+            <span className="text-sm font-normal text-slate-500 ml-2">
+              (Based on {visitors.length} total requests)
+            </span>
+          </h3>
+          {userUsageData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={userUsageData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis type="number" stroke="#64748b" />
+                <YAxis dataKey="name" type="category" stroke="#64748b" width={100} />
+                <Tooltip />
+                <Bar dataKey="usage" fill="#8b5cf6" name="Requests" />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-[300px] text-slate-400">
+              <div className="text-center">
+                <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>No user activity yet</p>
+                <p className="text-sm mt-1">Data will appear once users start generating traffic</p>
+              </div>
+            </div>
+          )}
         </Card>
       </div>
     </div>
