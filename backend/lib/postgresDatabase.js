@@ -324,6 +324,10 @@ export const redirects = {
     return result.rows;
   },
 
+  async findById(id) {
+    return await this.get(id);
+  },
+
   set: async function(id, redirect) {
     return await this.update(id, redirect);
   }

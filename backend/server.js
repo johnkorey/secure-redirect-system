@@ -1168,24 +1168,36 @@ app.post('/api/redirects', authMiddleware, async (req, res) => {
   res.status(201).json(created);
 });
 
-app.get('/api/redirects/:id', authMiddleware, (req, res) => {
-  const redirect = db.redirects.get(req.params.id);
-  if (!redirect) return res.status(404).json({ error: 'Not found' });
-  if (req.user.role !== 'admin' && redirect.user_id !== req.user.id) {
-    return res.status(403).json({ error: 'Access denied' });
+app.get('/api/redirects/:id', authMiddleware, async (req, res) => {
+  try {
+    const redirect = await db.redirects.get(req.params.id);
+    if (!redirect) return res.status(404).json({ error: 'Not found' });
+    if (req.user.role !== 'admin' && redirect.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json(redirect);
+  } catch (error) {
+    console.error('Get redirect error:', error);
+    res.status(500).json({ error: 'Failed to retrieve redirect' });
   }
-  res.json(redirect);
 });
 
-app.put('/api/redirects/:id', authMiddleware, (req, res) => {
-  const redirect = db.redirects.get(req.params.id);
-  if (!redirect) return res.status(404).json({ error: 'Not found' });
-  if (req.user.role !== 'admin' && redirect.user_id !== req.user.id) {
-    return res.status(403).json({ error: 'Access denied' });
+app.put('/api/redirects/:id', authMiddleware, async (req, res) => {
+  try {
+    const redirect = await db.redirects.get(req.params.id);
+    if (!redirect) return res.status(404).json({ error: 'Not found' });
+    if (req.user.role !== 'admin' && redirect.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const updated = await db.redirects.update(req.params.id, {
+      ...req.body,
+      user_id: redirect.user_id // Preserve original user_id
+    });
+    res.json(updated);
+  } catch (error) {
+    console.error('Update redirect error:', error);
+    res.status(500).json({ error: 'Failed to update redirect' });
   }
-  const updated = { ...redirect, ...req.body, user_id: redirect.user_id };
-  db.redirects.set(req.params.id, updated);
-  res.json(updated);
 });
 
 app.delete('/api/redirects/:id', authMiddleware, async (req, res) => {
