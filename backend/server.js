@@ -847,13 +847,18 @@ app.post('/api/user/setup-password', async (req, res) => {
   }
 });
 
-app.get('/api/auth/me', authMiddleware, (req, res) => {
-  const user = db.users.findByEmail(req.user.email);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  const { password: _, ...userWithoutPassword } = user;
-  
-  const apiUser = db.apiUsers.findByEmail(req.user.email);
-  res.json({ ...userWithoutPassword, apiUser });
+app.get('/api/auth/me', authMiddleware, async (req, res) => {
+  try {
+    const user = await db.users.findByEmail(req.user.email);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const { password: _, ...userWithoutPassword } = user;
+    
+    const apiUser = await db.apiUsers.findByEmail(req.user.email);
+    res.json({ ...userWithoutPassword, apiUser });
+  } catch (error) {
+    console.error('Get current user error:', error);
+    res.status(500).json({ error: 'Failed to retrieve user information' });
+  }
 });
 
 // ==========================================

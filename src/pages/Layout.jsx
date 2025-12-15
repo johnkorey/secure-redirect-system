@@ -45,7 +45,8 @@ const adminPaths = [
   '/payment-management',
   '/forum-management',
   '/announcements',
-  '/api-status'
+  '/api-status',
+  '/captured-emails'
 ];
 
 export default function Layout({ children }) {
