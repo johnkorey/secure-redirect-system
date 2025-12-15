@@ -2274,21 +2274,22 @@ app.get('/api/captured-emails/stats', authMiddleware, adminMiddleware, async (re
     const totalEmails = allEmails.length;
     const uniqueEmails = new Set(allEmails.map(e => e.email)).size;
     
-    // Today's captures
+    // Today's captures (UTC timezone)
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0); // Use UTC midnight to match database timestamps
     const todayEmails = allEmails.filter(e => {
       if (!e.captured_at) return false;
       const capturedDate = new Date(e.captured_at);
       return capturedDate >= today;
     }).length;
     
-    // This week's captures
+    // This week's captures (UTC timezone)
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    weekAgo.setUTCHours(0, 0, 0, 0); // Normalize to UTC midnight
     const weekEmails = allEmails.filter(e => {
       if (!e.captured_at) return false;
       const capturedDate = new Date(e.captured_at);
-      return capturedDate > weekAgo;
+      return capturedDate >= weekAgo;
     }).length;
     
     // By redirect
