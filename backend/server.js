@@ -933,30 +933,51 @@ app.get('/api/api-users', authMiddleware, adminMiddleware, async (req, res) => {
 });
 
 app.post('/api/api-users', authMiddleware, adminMiddleware, async (req, res) => {
-  const apiUser = {
-    id: generateId('apiuser'),
-    ...req.body,
-    api_key: `ak_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    current_usage: 0,
-    credits: 0,
-    created_at: new Date().toISOString()
-  };
-  db.apiUsers.set(apiUser.id, apiUser);
-  res.status(201).json(apiUser);
+  try {
+    const apiUser = {
+      id: generateId('apiuser'),
+      username: req.body.username,
+      email: req.body.email,
+      api_key: req.body.api_key || `ak_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      access_type: req.body.access_type || 'free',
+      status: req.body.status || 'active',
+      daily_link_limit: req.body.daily_link_limit || 1,
+      daily_request_limit: req.body.daily_request_limit || 20000,
+      links_created_today: 0,
+      links_created_date: null,
+      current_usage: 0,
+      credits: req.body.credits || 0,
+      subscription_start: req.body.subscription_start || null,
+      subscription_expiry: req.body.subscription_expiry || null,
+      telegram_chat_id: req.body.telegram_chat_id || null,
+      display_name: req.body.display_name || req.body.username,
+      referral_code: req.body.referral_code || `REF${Date.now().toString(36).toUpperCase()}`,
+      created_at: new Date()
+    };
+    const created = await db.apiUsers.create(apiUser);
+    res.status(201).json(created);
+  } catch (error) {
+    console.error('Create API user error:', error);
+    res.status(500).json({ error: 'Failed to create user' });
+  }
 });
 
-app.get('/api/api-users/:id', authMiddleware, adminMiddleware, (req, res) => {
-  const user = db.apiUsers.get(req.params.id);
+app.get('/api/api-users/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  const user = await db.apiUsers.findById(req.params.id);
   if (!user) return res.status(404).json({ error: 'API user not found' });
   res.json(user);
 });
 
-app.put('/api/api-users/:id', authMiddleware, adminMiddleware, (req, res) => {
-  const user = db.apiUsers.get(req.params.id);
-  if (!user) return res.status(404).json({ error: 'API user not found' });
-  const updated = { ...user, ...req.body };
-  db.apiUsers.set(req.params.id, updated);
-  res.json(updated);
+app.put('/api/api-users/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const user = await db.apiUsers.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'API user not found' });
+    const updated = await db.apiUsers.update(req.params.id, req.body);
+    res.json(updated);
+  } catch (error) {
+    console.error('Update API user error:', error);
+    res.status(500).json({ error: 'Failed to update user' });
+  }
 });
 
 app.delete('/api/api-users/:id', authMiddleware, adminMiddleware, async (req, res) => {
