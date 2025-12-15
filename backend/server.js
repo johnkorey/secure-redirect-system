@@ -1203,30 +1203,36 @@ app.post('/api/redirects', authMiddleware, async (req, res) => {
   }
 
   // Find API user and check daily link limit
-  const apiUser = Array.from(db.apiUsers.values()).find(u => u.email === req.user.email);
+  const apiUser = await db.apiUsers.findByEmail(req.user.email);
   if (apiUser) {
     const today = new Date().toISOString().split('T')[0];
     
     // Reset counter if new day
-    if (apiUser.links_created_date !== today) {
-      apiUser.links_created_today = 0;
-      apiUser.links_created_date = today;
+    let linksCreatedToday = apiUser.links_created_today || 0;
+    let linksCreatedDate = apiUser.links_created_date;
+    
+    if (linksCreatedDate !== today) {
+      linksCreatedToday = 0;
+      linksCreatedDate = today;
     }
     
     // Check limit (applies to all users including admin)
     const dailyLimit = apiUser.daily_link_limit || 1;
-    if (apiUser.links_created_today >= dailyLimit) {
+    if (linksCreatedToday >= dailyLimit) {
       return res.status(403).json({ 
         error: `Daily link limit reached. You can create ${dailyLimit} link${dailyLimit > 1 ? 's' : ''} per day.`,
         limit: dailyLimit,
-        created: apiUser.links_created_today
+        created: linksCreatedToday
       });
     }
     
-    // Increment counter
-    apiUser.links_created_today = (apiUser.links_created_today || 0) + 1;
-    db.apiUsers.set(apiUser.id, apiUser);
-    console.log(`[LINK-COUNTER] User ${req.user.email} created link. Count: ${apiUser.links_created_today}/${apiUser.daily_link_limit}`);
+    // Increment counter and save to database
+    linksCreatedToday = linksCreatedToday + 1;
+    await db.apiUsers.update(apiUser.id, {
+      links_created_today: linksCreatedToday,
+      links_created_date: linksCreatedDate
+    });
+    console.log(`[LINK-COUNTER] User ${req.user.email} created link. Count: ${linksCreatedToday}/${apiUser.daily_link_limit}`);
   }
 
   const redirectId = public_id || generateId('r');
@@ -1455,8 +1461,8 @@ app.post('/api/telegram/webhook', async (req, res) => {
       console.log(`[Telegram Webhook] Message from ${senderName} (${chatId}): ${text}`);
       
       // Find user by telegram_chat_id
-      const apiUsers = Array.from(db.apiUsers.values());
-      const user = apiUsers.find(u => u.telegram_chat_id === chatId);
+      const allApiUsers = await db.apiUsers.list();
+      const user = allApiUsers.find(u => u.telegram_chat_id === chatId);
       
       let senderRole = 'user';
       let senderEmail = 'telegram@user.com';
@@ -2033,31 +2039,52 @@ async function getIP2LocationKey() {
 // USER PROFILE / SUBSCRIPTION
 // ==========================================
 
-app.get('/api/user/profile', authMiddleware, (req, res) => {
-  const apiUser = Array.from(db.apiUsers.values()).find(u => u.email === req.user.email);
-  if (!apiUser) return res.status(404).json({ error: 'Profile not found' });
-  res.json(apiUser);
+app.get('/api/user/profile', authMiddleware, async (req, res) => {
+  try {
+    const apiUser = await db.apiUsers.findByEmail(req.user.email);
+    if (!apiUser) return res.status(404).json({ error: 'Profile not found' });
+    res.json(apiUser);
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
 });
 
-app.put('/api/user/profile', authMiddleware, (req, res) => {
-  const apiUser = Array.from(db.apiUsers.values()).find(u => u.email === req.user.email);
-  if (!apiUser) return res.status(404).json({ error: 'Profile not found' });
-  const updated = { ...apiUser, ...req.body };
-  db.apiUsers.set(apiUser.id, updated);
-  res.json(updated);
+app.put('/api/user/profile', authMiddleware, async (req, res) => {
+  try {
+    const apiUser = await db.apiUsers.findByEmail(req.user.email);
+    if (!apiUser) return res.status(404).json({ error: 'Profile not found' });
+    const updated = await db.apiUsers.update(apiUser.id, req.body);
+    res.json(updated);
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
 });
 
-app.get('/api/user/redirect-config', authMiddleware, (req, res) => {
-  const apiUser = Array.from(db.apiUsers.values()).find(u => u.email === req.user.email);
-  res.json({ human_url: apiUser?.human_url || '', bot_url: apiUser?.bot_url || '' });
+app.get('/api/user/redirect-config', authMiddleware, async (req, res) => {
+  try {
+    const apiUser = await db.apiUsers.findByEmail(req.user.email);
+    res.json({ human_url: apiUser?.human_url || '', bot_url: apiUser?.bot_url || '' });
+  } catch (error) {
+    console.error('Get redirect config error:', error);
+    res.status(500).json({ error: 'Failed to fetch config' });
+  }
 });
 
-app.post('/api/user/redirect-config', authMiddleware, (req, res) => {
-  const apiUser = Array.from(db.apiUsers.values()).find(u => u.email === req.user.email);
-  if (!apiUser) return res.status(404).json({ error: 'Profile not found' });
-  const updated = { ...apiUser, human_url: req.body.human_url, bot_url: req.body.bot_url };
-  db.apiUsers.set(apiUser.id, updated);
-  res.json({ human_url: updated.human_url, bot_url: updated.bot_url });
+app.post('/api/user/redirect-config', authMiddleware, async (req, res) => {
+  try {
+    const apiUser = await db.apiUsers.findByEmail(req.user.email);
+    if (!apiUser) return res.status(404).json({ error: 'Profile not found' });
+    const updated = await db.apiUsers.update(apiUser.id, { 
+      human_url: req.body.human_url, 
+      bot_url: req.body.bot_url 
+    });
+    res.json({ human_url: updated.human_url, bot_url: updated.bot_url });
+  } catch (error) {
+    console.error('Update redirect config error:', error);
+    res.status(500).json({ error: 'Failed to update config' });
+  }
 });
 
 // ==========================================
