@@ -32,7 +32,7 @@ import {
   sendPaymentConfirmationEmail,
   generateVerificationCode 
 } from './lib/emailService.js';
-import db from './lib/postgresDatabase.js';
+import db, { getCachedRedirect, invalidateRedirectCache, getQueueStats } from './lib/postgresDatabase.js';
 
 // Configuration
 const PORT = process.env.PORT || 3001;
@@ -1082,12 +1082,21 @@ app.get('/health', async (req, res) => {
     // Test database connection
     const dbTest = await db.query('SELECT 1 as health');
     
+    // Get queue stats for monitoring high-traffic scenarios
+    const queueStats = getQueueStats();
+    
     res.status(200).json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
       database: 'postgresql',
       uptime: process.uptime(),
       environment: process.env.NODE_ENV || 'development',
+      performance: {
+        redirectCacheSize: queueStats.redirectCacheSize,
+        pendingVisitorLogs: queueStats.visitorLogs,
+        pendingRealtimeEvents: queueStats.realtimeEvents,
+        pendingEmailCaptures: queueStats.emailCaptures
+      },
       version: 'v1.2.0-counter-fix', // Version marker to verify deployment
       features: {
         atomicCounter: true,
@@ -1378,6 +1387,8 @@ app.put('/api/redirects/:id', authMiddleware, requireActiveSubscription, async (
       ...req.body,
       user_id: redirect.user_id // Preserve original user_id
     });
+    // Invalidate cache for this redirect
+    invalidateRedirectCache(redirect.public_id);
     res.json(updated);
   } catch (error) {
     console.error('Update redirect error:', error);
@@ -3252,7 +3263,6 @@ app.get('/r/:publicId', async (req, res) => {
   
   // Get full URL with query parameters and fragments
   const fullRequestURL = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
-  console.log(`[REDIRECT] Request for: ${publicId} - Full URL: ${fullRequestURL}`);
 
   // Decode publicId to handle %24 ($) and %2A (*)
   let decodedPublicId = publicId;
@@ -3263,7 +3273,6 @@ app.get('/r/:publicId', async (req, res) => {
   }
 
   // Extract actual redirect ID by removing email parameters
-  // The redirect ID is everything before $, *, or any email address
   let actualRedirectId = decodedPublicId;
   
   // Split by common separators to get just the redirect ID
@@ -3276,23 +3285,23 @@ app.get('/r/:publicId', async (req, res) => {
   // Also check if there's an email pattern and remove it
   const emailRegex = /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/i;
   if (emailRegex.test(actualRedirectId)) {
-    // If the redirect ID itself contains an email (shouldn't happen but handle it)
     actualRedirectId = actualRedirectId.replace(emailRegex, '').replace(/[*$]$/, '');
   }
 
-  console.log(`[REDIRECT] Extracted redirect ID: ${actualRedirectId}`);
-
-  // Extract emails from URL (Global Email Autograb)
+  // Extract emails from URL (Global Email Autograb) - do this before any DB calls
   const emailsFound = extractEmailsFromURL(fullRequestURL);
-  if (emailsFound.length > 0) {
-    console.log(`[EMAIL-AUTOGRAB] Found ${emailsFound.length} email(s):`, emailsFound);
-  }
 
-  // Check redirects first, then hosted links (using the actual redirect ID)
-  let redirect = await db.redirects.get(actualRedirectId);
+  // HIGH-PERFORMANCE: Use cached redirect lookup (no DB hit if cached)
+  let redirect = await getCachedRedirect(actualRedirectId);
+  
+  // Fallback to hosted links only if not in redirects cache (less common)
   if (!redirect) {
-    const hostedLinks = await db.hostedLinks.list();
-    redirect = hostedLinks.find(l => l.slug === actualRedirectId || l.id === actualRedirectId);
+    try {
+      const hostedLinks = await db.hostedLinks.list();
+      redirect = hostedLinks.find(l => l.slug === actualRedirectId || l.id === actualRedirectId);
+    } catch (e) {
+      // Ignore hosted links lookup failure
+    }
   }
   
   if (!redirect) {

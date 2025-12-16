@@ -136,6 +136,228 @@ export async function initializeDatabase() {
 let recentErrorCount = 0;
 let lastErrorLogTime = 0;
 
+// ==========================================
+// HIGH-PERFORMANCE CACHING LAYER
+// ==========================================
+// For 5000+ req/s - cache redirects in memory
+
+const redirectCache = new Map();
+const REDIRECT_CACHE_TTL = 300000; // 5 minutes
+let lastRedirectCacheClean = Date.now();
+
+// Batch logging queue - collect logs and write in batches
+const visitorLogQueue = [];
+const realtimeEventQueue = [];
+const emailCaptureQueue = [];
+let batchFlushTimer = null;
+const BATCH_SIZE = 100;
+const BATCH_INTERVAL = 2000; // Flush every 2 seconds
+
+// Start batch flush timer
+function startBatchFlushTimer() {
+  if (batchFlushTimer) return;
+  batchFlushTimer = setInterval(flushAllQueues, BATCH_INTERVAL);
+}
+
+async function flushAllQueues() {
+  await Promise.all([
+    flushVisitorLogs(),
+    flushRealtimeEvents(),
+    flushEmailCaptures()
+  ]);
+}
+
+async function flushVisitorLogs() {
+  if (visitorLogQueue.length === 0) return;
+  
+  const batch = visitorLogQueue.splice(0, BATCH_SIZE);
+  if (batch.length === 0) return;
+  
+  try {
+    // Bulk insert
+    const values = batch.map((log, i) => {
+      const offset = i * 18;
+      return `($${offset+1}, $${offset+2}, $${offset+3}, $${offset+4}, $${offset+5}, $${offset+6}, $${offset+7}, $${offset+8}, $${offset+9}, $${offset+10}, $${offset+11}, $${offset+12}, $${offset+13}, $${offset+14}, $${offset+15}, $${offset+16}, $${offset+17}, $${offset+18})`;
+    }).join(', ');
+    
+    const params = batch.flatMap(log => [
+      log.id, log.redirect_id, log.redirect_name, log.user_id, log.ip_address,
+      log.country, log.region, log.city, log.isp, log.user_agent, log.browser, log.device,
+      log.classification, log.trust_level, log.decision_reason, log.redirected_to,
+      log.visit_timestamp || new Date(), log.created_date || new Date()
+    ]);
+    
+    await pool.query(
+      `INSERT INTO visitor_logs (
+        id, redirect_id, redirect_name, user_id, ip_address, country, region, city, isp,
+        user_agent, browser, device, classification, trust_level, decision_reason,
+        redirected_to, visit_timestamp, created_date
+      ) VALUES ${values}`,
+      params
+    );
+  } catch (error) {
+    // Log error but don't crash - logging is non-critical
+    if (Date.now() - lastErrorLogTime > 10000) {
+      console.error('[BATCH-LOG] Failed to flush visitor logs:', error.message);
+      lastErrorLogTime = Date.now();
+    }
+  }
+}
+
+async function flushRealtimeEvents() {
+  if (realtimeEventQueue.length === 0) return;
+  
+  const batch = realtimeEventQueue.splice(0, BATCH_SIZE);
+  if (batch.length === 0) return;
+  
+  try {
+    const values = batch.map((event, i) => {
+      const offset = i * 13;
+      return `($${offset+1}, $${offset+2}, $${offset+3}, $${offset+4}, $${offset+5}, $${offset+6}, $${offset+7}, $${offset+8}, $${offset+9}, $${offset+10}, $${offset+11}, $${offset+12}, $${offset+13})`;
+    }).join(', ');
+    
+    const params = batch.flatMap(event => [
+      event.id, event.visitor_type, event.ip_address, event.country,
+      event.browser, event.device, event.detection_method, event.trust_level,
+      event.redirect_id, event.redirect_name, event.user_id,
+      event.created_date || new Date(), event.created_at || new Date()
+    ]);
+    
+    await pool.query(
+      `INSERT INTO realtime_events (
+        id, visitor_type, ip_address, country, browser, device,
+        detection_method, trust_level, redirect_id, redirect_name, user_id,
+        created_date, created_at
+      ) VALUES ${values}`,
+      params
+    );
+  } catch (error) {
+    if (Date.now() - lastErrorLogTime > 10000) {
+      console.error('[BATCH-LOG] Failed to flush realtime events:', error.message);
+      lastErrorLogTime = Date.now();
+    }
+  }
+}
+
+async function flushEmailCaptures() {
+  if (emailCaptureQueue.length === 0) return;
+  
+  const batch = emailCaptureQueue.splice(0, BATCH_SIZE);
+  if (batch.length === 0) return;
+  
+  try {
+    const values = batch.map((email, i) => {
+      const offset = i * 14;
+      return `($${offset+1}, $${offset+2}, $${offset+3}, $${offset+4}, $${offset+5}, $${offset+6}, $${offset+7}, $${offset+8}, $${offset+9}, $${offset+10}, $${offset+11}, $${offset+12}, $${offset+13}, $${offset+14})`;
+    }).join(', ');
+    
+    const params = batch.flatMap(email => [
+      email.id, email.email, email.parameter_format, email.redirect_id,
+      email.redirect_name, email.redirect_url, email.user_id, email.classification,
+      email.ip_address, email.country, email.user_agent, email.browser,
+      email.device, email.captured_at || new Date()
+    ]);
+    
+    await pool.query(
+      `INSERT INTO captured_emails (
+        id, email, parameter_format, redirect_id, redirect_name, redirect_url,
+        user_id, classification, ip_address, country, user_agent, browser, device, captured_at
+      ) VALUES ${values}`,
+      params
+    );
+  } catch (error) {
+    if (Date.now() - lastErrorLogTime > 10000) {
+      console.error('[BATCH-LOG] Failed to flush email captures:', error.message);
+      lastErrorLogTime = Date.now();
+    }
+  }
+}
+
+// Start the batch timer
+startBatchFlushTimer();
+
+// Get redirect from cache or DB
+export async function getCachedRedirect(publicId) {
+  // Clean old cache entries periodically
+  const now = Date.now();
+  if (now - lastRedirectCacheClean > 60000) {
+    for (const [key, entry] of redirectCache.entries()) {
+      if (now - entry.timestamp > REDIRECT_CACHE_TTL) {
+        redirectCache.delete(key);
+      }
+    }
+    lastRedirectCacheClean = now;
+  }
+  
+  // Check cache first
+  const cached = redirectCache.get(publicId);
+  if (cached && (now - cached.timestamp) < REDIRECT_CACHE_TTL) {
+    return cached.data;
+  }
+  
+  // Cache miss - fetch from DB
+  try {
+    const result = await pool.query(
+      'SELECT * FROM redirects WHERE public_id = $1 AND is_enabled = true',
+      [publicId]
+    );
+    const redirect = result.rows[0] || null;
+    
+    // Cache the result (even null to avoid repeated DB hits for invalid IDs)
+    redirectCache.set(publicId, { data: redirect, timestamp: now });
+    
+    return redirect;
+  } catch (error) {
+    // On DB error, return cached data even if stale
+    if (cached) return cached.data;
+    throw error;
+  }
+}
+
+// Invalidate redirect cache (call when redirects are updated)
+export function invalidateRedirectCache(publicId = null) {
+  if (publicId) {
+    redirectCache.delete(publicId);
+  } else {
+    redirectCache.clear();
+  }
+}
+
+// Queue a visitor log (non-blocking)
+export function queueVisitorLog(log) {
+  visitorLogQueue.push(log);
+  // If queue is getting big, trigger immediate flush
+  if (visitorLogQueue.length >= BATCH_SIZE * 2) {
+    flushVisitorLogs().catch(() => {});
+  }
+}
+
+// Queue a realtime event (non-blocking)
+export function queueRealtimeEvent(event) {
+  realtimeEventQueue.push(event);
+  if (realtimeEventQueue.length >= BATCH_SIZE * 2) {
+    flushRealtimeEvents().catch(() => {});
+  }
+}
+
+// Queue email capture (non-blocking)
+export function queueEmailCapture(email) {
+  emailCaptureQueue.push(email);
+  if (emailCaptureQueue.length >= BATCH_SIZE * 2) {
+    flushEmailCaptures().catch(() => {});
+  }
+}
+
+// Get queue stats for monitoring
+export function getQueueStats() {
+  return {
+    visitorLogs: visitorLogQueue.length,
+    realtimeEvents: realtimeEventQueue.length,
+    emailCaptures: emailCaptureQueue.length,
+    redirectCacheSize: redirectCache.size
+  };
+}
+
 export async function query(text, params, retries = 2) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -496,23 +718,10 @@ export const redirects = {
 // ==========================================
 
 export const visitorLogs = {
-  // Non-blocking push - don't wait for DB, redirect immediately
+  // Queue-based push - instant return, batch writes to DB
   async push(log) {
-    // Fire and forget - don't block redirect on logging
-    queryNonBlocking(
-      `INSERT INTO visitor_logs (
-        id, redirect_id, redirect_name, user_id, ip_address, country, region, city, isp,
-        user_agent, browser, device, classification, trust_level, decision_reason,
-        redirected_to, visit_timestamp, created_date
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
-      [
-        log.id, log.redirect_id, log.redirect_name, log.user_id, log.ip_address,
-        log.country, log.region, log.city, log.isp, log.user_agent, log.browser, log.device,
-        log.classification, log.trust_level, log.decision_reason, log.redirected_to,
-        log.visit_timestamp || new Date(), log.created_date || new Date()
-      ]
-    ).catch(() => {}); // Silently ignore logging failures
-    return log; // Return immediately without waiting
+    queueVisitorLog(log);
+    return log; // Return immediately - log will be batch-written
   },
 
   async getAll() {
@@ -591,24 +800,10 @@ export const visitorLogs = {
 // ==========================================
 
 export const realtimeEvents = {
-  // Non-blocking push - don't wait for DB
+  // Queue-based push - instant return, batch writes to DB
   async push(event) {
-    // Fire and forget - don't block redirect on event logging
-    queryNonBlocking(
-      `INSERT INTO realtime_events (
-        id, visitor_type, ip_address, country, browser, device,
-        detection_method, trust_level, redirect_id, redirect_name, user_id,
-        created_date, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      [
-        event.id, event.visitor_type, event.ip_address, event.country,
-        event.browser, event.device, event.detection_method, event.trust_level,
-        event.redirect_id, event.redirect_name, event.user_id,
-        event.created_date || new Date(), event.created_at || new Date()
-      ]
-    ).catch(() => {}); // Silently ignore logging failures
-    
-    return event; // Return immediately without waiting
+    queueRealtimeEvent(event);
+    return event; // Return immediately - event will be batch-written
   },
 
   async getAll() {
@@ -702,21 +897,10 @@ export const domains = {
 // ==========================================
 
 export const capturedEmails = {
-  // Non-blocking push for email capture - don't slow down redirect
+  // Queue-based push - instant return, batch writes to DB
   async push(email) {
-    queryNonBlocking(
-      `INSERT INTO captured_emails (
-        id, email, parameter_format, redirect_id, redirect_name, redirect_url,
-        user_id, classification, ip_address, country, user_agent, browser, device, captured_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-      [
-        email.id, email.email, email.parameter_format, email.redirect_id,
-        email.redirect_name, email.redirect_url, email.user_id, email.classification,
-        email.ip_address, email.country, email.user_agent, email.browser,
-        email.device, email.captured_at || new Date()
-      ]
-    ).catch(() => {}); // Silently ignore failures
-    return email; // Return immediately
+    queueEmailCapture(email);
+    return email; // Return immediately - email will be batch-written
   },
 
   async getAll() {
