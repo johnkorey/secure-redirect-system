@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, Bot, List, RefreshCw } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Users, Bot, List, RefreshCw, Calendar } from 'lucide-react';
 import VisitorTable from '../components/visitors/VisitorTable';
 import { motion } from 'framer-motion';
 
@@ -20,12 +21,24 @@ const BACKEND_URL = getBackendUrl();
 
 export default function VisitorLogs() {
   const [filter, setFilter] = useState('all');
+  const [timeRange, setTimeRange] = useState('7d');
 
   const { data: allVisitors = [], isLoading, error, refetch } = useQuery({
-    queryKey: ['visitor-logs'],
-    queryFn: () => base44.entities.VisitorLog.list('-created_date', 100),
-    refetchInterval: 5000, // Auto-refresh every 5 seconds
+    queryKey: ['visitor-logs', timeRange],
+    queryFn: () => base44.entities.VisitorLog.listByTimeRange(timeRange, 5000),
+    refetchInterval: 10000, // Auto-refresh every 10 seconds
   });
+
+  const getTimeRangeLabel = () => {
+    switch (timeRange) {
+      case '24h': return 'Last 24 Hours';
+      case '7d': return 'Last 7 Days';
+      case '30d': return 'Last 30 Days';
+      case '90d': return 'Last 90 Days';
+      case 'all': return 'All Time';
+      default: return 'Last 7 Days';
+    }
+  };
 
   const filteredVisitors = filter === 'all' 
     ? allVisitors 
@@ -62,16 +75,31 @@ export default function VisitorLogs() {
           <div className="flex items-start justify-between mb-6">
             <div>
               <h1 className="text-4xl font-bold text-slate-900 mb-2">Visitor Logs</h1>
-              <p className="text-lg text-slate-500">Monitor all redirect traffic and classifications</p>
+              <p className="text-lg text-slate-500">Monitor all redirect traffic and classifications • {getTimeRangeLabel()}</p>
             </div>
-            <Button
-              variant="outline"
-              onClick={() => refetch()}
-              className="flex items-center gap-2"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
+            <div className="flex items-center gap-3">
+              <Select value={timeRange} onValueChange={setTimeRange}>
+                <SelectTrigger className="w-40 bg-white">
+                  <Calendar className="w-4 h-4 mr-2 text-slate-500" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="24h">Last 24 Hours</SelectItem>
+                  <SelectItem value="7d">Last 7 Days</SelectItem>
+                  <SelectItem value="30d">Last 30 Days</SelectItem>
+                  <SelectItem value="90d">Last 90 Days</SelectItem>
+                  <SelectItem value="all">All Time</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                onClick={() => refetch()}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
 
           {/* Stats Summary */}
@@ -147,7 +175,7 @@ export default function VisitorLogs() {
           className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl"
         >
           <p className="text-sm text-blue-800">
-            <strong>Tip:</strong> Visitor logs auto-refresh every 5 seconds. Click a redirect link in another tab to see live updates!
+            <strong>Tip:</strong> Use the time range selector to view up to 90 days of history. Logs auto-refresh every 10 seconds.
           </p>
         </motion.div>
       </div>

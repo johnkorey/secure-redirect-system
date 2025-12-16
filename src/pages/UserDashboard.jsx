@@ -31,15 +31,16 @@ export default function UserDashboard() {
   const apiUser = currentUser?.apiUser;
 
   const { data: visitors = [], isLoading: visitorsLoading, error: visitorsError } = useQuery({
-    queryKey: ['my-visitors', currentUser?.id],
+    queryKey: ['my-visitors', currentUser?.id, timeRange],
     queryFn: async () => {
-      console.log('[DEBUG] Fetching visitors for user:', currentUser?.id);
-      const result = await base44.entities.VisitorLog.filter({ user_id: currentUser?.id });
+      console.log('[DEBUG] Fetching visitors for user:', currentUser?.id, 'timeRange:', timeRange);
+      // Use the time-range aware API endpoint - it will filter by user on the backend
+      const result = await base44.entities.VisitorLog.listByTimeRange(timeRange, 5000);
       console.log('[DEBUG] Visitors fetched:', result?.length || 0);
       return result;
     },
     enabled: !!currentUser?.id,
-    refetchInterval: 5000, // Auto-refresh every 5 seconds
+    refetchInterval: 10000, // Auto-refresh every 10 seconds
   });
 
   // Debug logging

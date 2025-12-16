@@ -1312,12 +1312,22 @@ app.delete('/api/hosted-links/:id', authMiddleware, requireActiveSubscription, (
 // ==========================================
 
 app.get('/api/visitors', authMiddleware, requireActiveSubscription, async (req, res) => {
-  const { limit = 100, timeRange = '24h' } = req.query;
+  const { limit = 5000, timeRange = '7d' } = req.query;
   const isAdmin = req.user.role === 'admin';
   
   try {
-    // Parse time range: '24h' = 24 hours, '7d' = 7 days (168 hours)
-    const hours = timeRange === '7d' ? 168 : 24;
+    // Parse time range to hours
+    const getHoursFromTimeRange = (range) => {
+      switch (range) {
+        case '24h': return 24;
+        case '7d': return 168;      // 7 days
+        case '30d': return 720;     // 30 days
+        case '90d': return 2160;    // 90 days
+        case 'all': return 8760;    // 1 year (max)
+        default: return 168;        // Default to 7 days
+      }
+    };
+    const hours = getHoursFromTimeRange(timeRange);
     
     let logs;
     if (isAdmin) {
