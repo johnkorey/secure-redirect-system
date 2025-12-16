@@ -216,6 +216,20 @@ export const visitorLogs = {
   ...createArrayStore('visitorLogs', 500000, 7),
   countByClassification: (classification) => {
     return data.visitorLogs.filter(l => l.classification === classification).length;
+  },
+  // Get all logs within a time period (hours)
+  getByTimePeriod: (hours) => {
+    const cutoffDate = new Date(Date.now() - hours * 60 * 60 * 1000);
+    return data.visitorLogs
+      .filter(l => new Date(l.created_date) >= cutoffDate)
+      .sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
+  },
+  // Get logs for a specific user within a time period
+  getByUserAndTimePeriod: (userId, hours) => {
+    const cutoffDate = new Date(Date.now() - hours * 60 * 60 * 1000);
+    return data.visitorLogs
+      .filter(l => l.user_id === userId && new Date(l.created_date) >= cutoffDate)
+      .sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
   }
 };
 

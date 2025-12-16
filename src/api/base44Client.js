@@ -64,8 +64,8 @@ function createCrudEntity(basePath) {
 const Redirect = createCrudEntity('/api/redirects');
 const VisitorLog = {
   ...createCrudEntity('/api/visitors'),
-  list: (sortBy, limit = 1000, timeRange = '7d') => apiFetch(`/api/visitors?limit=${limit}&timeRange=${timeRange}`),
-  listByTimeRange: (timeRange = '7d', limit = 5000) => apiFetch(`/api/visitors?timeRange=${timeRange}&limit=${limit}`),
+  list: (sortBy, timeRange = '7d') => apiFetch(`/api/visitors?timeRange=${timeRange}`),
+  listByTimeRange: (timeRange = '7d') => apiFetch(`/api/visitors?timeRange=${timeRange}`),
 };
 const APIUser = createCrudEntity('/api/api-users');
 const Payment = {

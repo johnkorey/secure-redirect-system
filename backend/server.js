@@ -1312,7 +1312,7 @@ app.delete('/api/hosted-links/:id', authMiddleware, requireActiveSubscription, (
 // ==========================================
 
 app.get('/api/visitors', authMiddleware, requireActiveSubscription, async (req, res) => {
-  const { limit = 5000, timeRange = '7d' } = req.query;
+  const { timeRange = '7d' } = req.query;
   const isAdmin = req.user.role === 'admin';
   
   try {
@@ -1338,11 +1338,8 @@ app.get('/api/visitors', authMiddleware, requireActiveSubscription, async (req, 
       logs = await db.visitorLogs.getByUserAndTimePeriod(req.user.id, hours);
     }
     
-    // Apply limit if specified
-    const limitedLogs = logs.slice(0, parseInt(limit));
-    
-    // Enrich logs with owner email for analytics matching
-    const enrichedLogs = await Promise.all(limitedLogs.map(async (log) => {
+    // Enrich logs with owner email for analytics matching (no limit - returns all data within time range)
+    const enrichedLogs = await Promise.all(logs.map(async (log) => {
       if (log.user_id && !log.owner_email) {
         const user = await db.users.findById(log.user_id);
         return { ...log, owner_email: user?.email };
@@ -1374,13 +1371,13 @@ app.post('/api/visitors', authMiddleware, async (req, res) => {
 // ==========================================
 
 app.get('/api/realtime-events', authMiddleware, async (req, res) => {
-  const { limit = 50 } = req.query;
   const isAdmin = req.user.role === 'admin';
   let events = await db.realtimeEvents.getAll();
   if (!isAdmin) {
     events = events.filter(e => e.user_id === req.user.id);
   }
-  res.json(events.slice(-parseInt(limit)).reverse());
+  // Return all events (7-day retention is handled by database cleanup)
+  res.json(events.reverse());
 });
 
 // ==========================================

@@ -9,8 +9,8 @@ const COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899'
 
 export default function UsageAnalytics() {
   const { data: visitors = [] } = useQuery({
-    queryKey: ['all-visitors'],
-    queryFn: () => base44.entities.VisitorLog.list('-created_date', 1000),
+    queryKey: ['all-visitors-7d'],
+    queryFn: () => base44.entities.VisitorLog.list('-created_date', '7d'),
     refetchInterval: 10000, // Auto-refresh every 10 seconds
   });
 
