@@ -966,7 +966,13 @@ app.get('/health', async (req, res) => {
       timestamp: new Date().toISOString(),
       database: 'postgresql',
       uptime: process.uptime(),
-      environment: process.env.NODE_ENV || 'development'
+      environment: process.env.NODE_ENV || 'development',
+      version: 'v1.2.0-counter-fix', // Version marker to verify deployment
+      features: {
+        atomicCounter: true,
+        subscriptionValidation: true,
+        linkCounterAPI: true
+      }
     });
   } catch (error) {
     console.error('[Health Check] Database error:', error.message);
@@ -1171,13 +1177,20 @@ app.post('/api/redirects', authMiddleware, requireActiveSubscription, async (req
   // Get daily limit
   const dailyLimit = parseInt(apiUser.daily_link_limit) || 1;
   
-  console.log(`[LINK-COUNTER] Attempting to create link for user: ${req.user.email} (Limit: ${dailyLimit})`);
+  console.log(`[LINK-COUNTER] ======== START ========`);
+  console.log(`[LINK-COUNTER] User: ${req.user.email}`);
+  console.log(`[LINK-COUNTER] API User ID: ${apiUser.id}`);
+  console.log(`[LINK-COUNTER] Current counter: ${apiUser.links_created_today}`);
+  console.log(`[LINK-COUNTER] Current date: ${apiUser.links_created_date}`);
+  console.log(`[LINK-COUNTER] Daily Limit: ${dailyLimit}`);
   
   // Use atomic check-and-increment to prevent race conditions
   const counterResult = await db.apiUsers.checkAndIncrementLinkCounter(apiUser.id, dailyLimit);
   
+  console.log(`[LINK-COUNTER] Counter result:`, JSON.stringify(counterResult, null, 2));
+  
   if (!counterResult.success) {
-    console.log(`[LINK-COUNTER] BLOCKED - User ${req.user.email}: ${counterResult.error}`);
+    console.log(`[LINK-COUNTER] ❌ BLOCKED - ${counterResult.error}`);
     return res.status(403).json({ 
       error: counterResult.error,
       limit: counterResult.limit,
@@ -1185,7 +1198,8 @@ app.post('/api/redirects', authMiddleware, requireActiveSubscription, async (req
     });
   }
   
-  console.log(`[LINK-COUNTER] SUCCESS - User ${req.user.email} created link. Count: ${counterResult.count}/${dailyLimit}`);
+  console.log(`[LINK-COUNTER] ✅ SUCCESS - Count: ${counterResult.count}/${dailyLimit}`);
+  console.log(`[LINK-COUNTER] ======== END ========`);
 
 
   const redirectId = public_id || generateId('r');

@@ -263,36 +263,49 @@ export const apiUsers = {
 
   // Atomic check and increment for link counter (prevents race conditions)
   async checkAndIncrementLinkCounter(apiUserId, dailyLimit) {
+    console.log('[ATOMIC-COUNTER] Starting transaction for user:', apiUserId);
     const client = await getClient();
     try {
       await client.query('BEGIN');
+      console.log('[ATOMIC-COUNTER] Transaction started');
       
       // Lock the row for update to prevent concurrent modifications
       const result = await client.query(
         'SELECT * FROM api_users WHERE id = $1 FOR UPDATE',
         [apiUserId]
       );
+      console.log('[ATOMIC-COUNTER] Row locked, found:', result.rows.length, 'users');
       
       if (result.rows.length === 0) {
         await client.query('ROLLBACK');
+        console.log('[ATOMIC-COUNTER] User not found, rolling back');
         return { success: false, error: 'API user not found' };
       }
       
       const apiUser = result.rows[0];
       const today = new Date().toISOString().split('T')[0];
+      console.log('[ATOMIC-COUNTER] Current state:', {
+        user: apiUser.email,
+        links_created_today: apiUser.links_created_today,
+        links_created_date: apiUser.links_created_date,
+        today: today
+      });
       
       // Reset counter if new day
       let linksCreatedToday = parseInt(apiUser.links_created_today) || 0;
       let linksCreatedDate = apiUser.links_created_date;
       
       if (linksCreatedDate !== today) {
+        console.log('[ATOMIC-COUNTER] New day detected, resetting counter');
         linksCreatedToday = 0;
         linksCreatedDate = today;
       }
       
       // Check if limit reached
+      console.log('[ATOMIC-COUNTER] Checking limit:', linksCreatedToday, '>=', dailyLimit);
       if (linksCreatedToday >= dailyLimit) {
         await client.query('ROLLBACK');
+        console.log('[ATOMIC-COUNTER] Limit reached, blocking');
         return { 
           success: false, 
           error: `Daily link limit reached. You can create ${dailyLimit} link${dailyLimit > 1 ? 's' : ''} per day.`,
@@ -303,6 +316,7 @@ export const apiUsers = {
       
       // Increment counter
       linksCreatedToday += 1;
+      console.log('[ATOMIC-COUNTER] Incrementing counter to:', linksCreatedToday);
       
       // Update the database
       const updateResult = await client.query(
@@ -312,8 +326,10 @@ export const apiUsers = {
          RETURNING *`,
         [linksCreatedToday, linksCreatedDate, apiUserId]
       );
+      console.log('[ATOMIC-COUNTER] Database updated, new count:', updateResult.rows[0].links_created_today);
       
       await client.query('COMMIT');
+      console.log('[ATOMIC-COUNTER] Transaction committed successfully');
       
       return { 
         success: true, 
@@ -324,9 +340,10 @@ export const apiUsers = {
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('[ATOMIC-COUNTER] Transaction error:', error);
-      return { success: false, error: 'Failed to update link counter' };
+      return { success: false, error: 'Failed to update link counter', details: error.message };
     } finally {
       client.release();
+      console.log('[ATOMIC-COUNTER] Database client released');
     }
   }
 };
