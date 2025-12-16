@@ -1439,9 +1439,22 @@ app.get('/api/forum-messages', authMiddleware, async (req, res) => {
   let messages = await db.forumMessages.list(limit);
   console.log(`[FORUM] Total messages from database: ${messages.length}`);
   
+  // Log sample of messages to see their structure
+  if (messages.length > 0) {
+    console.log(`[FORUM] Sample message:`, JSON.stringify({
+      id: messages[0].id,
+      sender_email: messages[0].sender_email,
+      sender_role: messages[0].sender_role,
+      is_moderated: messages[0].is_moderated,
+      is_support: messages[0].is_support
+    }));
+  }
+  
+  // Only filter moderated messages for non-admin users
+  // Fix: Check explicitly for true (not just truthy) to handle null/undefined properly
   if (req.user.role !== 'admin') {
     const beforeFilter = messages.length;
-    messages = messages.filter(m => !m.is_moderated);
+    messages = messages.filter(m => m.is_moderated !== true);
     console.log(`[FORUM] After moderation filter: ${messages.length} (filtered out ${beforeFilter - messages.length} moderated)`);
   }
   

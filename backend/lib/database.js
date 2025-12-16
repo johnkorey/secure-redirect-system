@@ -132,6 +132,7 @@ function createArrayStore(storeName, maxSize = 10000) {
         data[storeName] = data[storeName].slice(-maxSize);
       }
       debouncedSave();
+      return item;
     },
     filter: (fn) => data[storeName].filter(fn),
     find: (fn) => data[storeName].find(fn),
