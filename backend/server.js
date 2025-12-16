@@ -82,6 +82,93 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.join(__dirname, '..', 'dist');
+
+// ==========================================
+// DOMAIN SEPARATION MIDDLEWARE
+// ==========================================
+// Enforces strict domain separation:
+// - Main domain: Can access admin/login pages, CANNOT be used for redirects
+// - Redirect domains: Can ONLY handle /r/ redirect routes, NO access to login/admin
+
+app.use(async (req, res, next) => {
+  const hostname = req.hostname || req.headers.host?.split(':')[0] || 'localhost';
+  const requestPath = req.path;
+  
+  // Skip domain check for localhost/development
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('192.168.')) {
+    return next();
+  }
+  
+  // Skip for health checks and API endpoints that need to work from anywhere
+  if (requestPath === '/health' || requestPath === '/api/health') {
+    return next();
+  }
+  
+  try {
+    // Get all configured domains
+    const allDomains = await db.domains.list();
+    
+    // Find the domain configuration for this hostname
+    const domainConfig = allDomains.find(d => 
+      d.domain_name === hostname || 
+      d.domain_name === `www.${hostname}` ||
+      `www.${d.domain_name}` === hostname
+    );
+    
+    // If no domain config found, allow (might be first setup or unconfigured)
+    if (!domainConfig) {
+      console.log(`[DOMAIN] Unknown domain ${hostname} - allowing access`);
+      return next();
+    }
+    
+    const isMainDomain = domainConfig.type === 'main';
+    const isRedirectDomain = domainConfig.type === 'redirect';
+    
+    // REDIRECT DOMAIN RESTRICTIONS
+    // Only allow /r/ routes and API endpoints needed for redirects
+    if (isRedirectDomain) {
+      const allowedPaths = [
+        /^\/r\//,                    // Redirect routes
+        /^\/api\/public\//,          // Public API for redirects
+        /^\/api\/classify$/,         // Classification API
+        /^\/api\/decision$/,         // Decision API
+        /^\/api\/capture-email$/,    // Email capture API
+        /^\/favicon\.ico$/,          // Favicon
+        /^\/robots\.txt$/,           // Robots.txt
+      ];
+      
+      const isAllowed = allowedPaths.some(pattern => pattern.test(requestPath));
+      
+      if (!isAllowed) {
+        console.log(`[DOMAIN-BLOCK] Redirect domain ${hostname} tried to access ${requestPath} - BLOCKED`);
+        return res.status(403).json({
+          error: 'Access denied',
+          message: 'This domain is configured for redirects only. Please use the main domain for admin access.'
+        });
+      }
+    }
+    
+    // MAIN DOMAIN RESTRICTIONS
+    // Block redirect routes (/r/) on main domain
+    if (isMainDomain && requestPath.startsWith('/r/')) {
+      console.log(`[DOMAIN-BLOCK] Main domain ${hostname} tried redirect route ${requestPath} - BLOCKED`);
+      return res.status(403).json({
+        error: 'Access denied',
+        message: 'Redirect links cannot be used on the main domain. Please use a redirect domain.'
+      });
+    }
+    
+    // Log allowed access
+    console.log(`[DOMAIN] ${isMainDomain ? 'Main' : 'Redirect'} domain ${hostname} accessing ${requestPath} - allowed`);
+    
+  } catch (error) {
+    console.error('[DOMAIN] Error checking domain:', error);
+    // On error, allow access (fail open for availability)
+  }
+  
+  next();
+});
+
 app.use(express.static(distPath));
 
 // Pricing configuration
