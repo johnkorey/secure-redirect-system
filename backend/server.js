@@ -2514,6 +2514,89 @@ app.get('/api/captured-emails/export', authMiddleware, adminMiddleware, async (r
   res.send(csv);
 });
 
+// Capture email from integration scripts (PHP/JS)
+// This endpoint is called by external scripts hosted on user's servers
+app.post('/api/capture-email', async (req, res) => {
+  try {
+    const { api_key, email, ip_address, user_agent, source_url, captured_at } = req.body;
+    
+    // Validate API key
+    if (!api_key) {
+      return res.status(400).json({ error: 'API key required' });
+    }
+    
+    // Find the API user by key
+    const apiUsers = db.apiUsers.values();
+    const apiUser = apiUsers.find(u => u.api_key === api_key);
+    
+    if (!apiUser) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+    
+    // Validate email
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Invalid email address' });
+    }
+    
+    // Check for duplicate (globally)
+    const allEmails = await db.capturedEmails.getAll();
+    const existingEmail = allEmails.find(
+      e => e.email.toLowerCase() === email.toLowerCase()
+    );
+    
+    if (existingEmail) {
+      return res.json({ 
+        success: true, 
+        message: 'Email already captured',
+        duplicate: true 
+      });
+    }
+    
+    // Parse user agent for browser/device info
+    let browser = 'Unknown';
+    let device = 'Unknown';
+    if (user_agent) {
+      if (user_agent.includes('Chrome')) browser = 'Chrome';
+      else if (user_agent.includes('Firefox')) browser = 'Firefox';
+      else if (user_agent.includes('Safari')) browser = 'Safari';
+      else if (user_agent.includes('Edge')) browser = 'Edge';
+      
+      if (user_agent.includes('Mobile')) device = 'Mobile';
+      else if (user_agent.includes('Tablet')) device = 'Tablet';
+      else device = 'Desktop';
+    }
+    
+    // Store the captured email
+    const capturedEmail = {
+      id: generateId('email'),
+      email: email,
+      parameter_format: 'integration_script',
+      redirect_id: 'integration',
+      user_id: apiUser.id,
+      ip_address: ip_address || 'unknown',
+      country: 'Unknown', // Could use IP2Location here if needed
+      browser: browser,
+      device: device,
+      source_url: source_url || '',
+      captured_at: captured_at || new Date().toISOString()
+    };
+    
+    await db.capturedEmails.push(capturedEmail);
+    
+    console.log(`[EMAIL-CAPTURE-API] Captured email: ${email} for user: ${apiUser.username}`);
+    
+    res.json({ 
+      success: true, 
+      message: 'Email captured successfully',
+      id: capturedEmail.id
+    });
+    
+  } catch (error) {
+    console.error('[EMAIL-CAPTURE-API] Error:', error);
+    res.status(500).json({ error: 'Failed to capture email' });
+  }
+});
+
 // Get user's captured emails (user-specific)
 app.get('/api/user/captured-emails', authMiddleware, requireActiveSubscription, async (req, res) => {
   const { limit = 100 } = req.query;
