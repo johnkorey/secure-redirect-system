@@ -99,6 +99,11 @@ app.use(async (req, res, next) => {
     return next();
   }
   
+  // Skip domain check for DigitalOcean app URLs (they should have full access)
+  if (hostname.includes('.ondigitalocean.app')) {
+    return next();
+  }
+  
   // Skip for health checks and API endpoints that need to work from anywhere
   if (requestPath === '/health' || requestPath === '/api/health') {
     return next();
