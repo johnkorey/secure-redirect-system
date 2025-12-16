@@ -255,18 +255,55 @@ export default function UsageAnalytics() {
             </span>
           </h3>
           {userUsageData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={userUsageData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis type="number" stroke="#64748b" />
-                <YAxis dataKey="name" type="category" stroke="#64748b" width={100} />
-                <Tooltip 
-                  formatter={(value, name) => [value, name]}
-                  labelFormatter={(label) => `User: ${label}`}
+            <ResponsiveContainer width="100%" height={350}>
+              <BarChart 
+                data={userUsageData} 
+                layout="vertical"
+                barCategoryGap="20%"
+                margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={true} vertical={false} />
+                <XAxis 
+                  type="number" 
+                  stroke="#64748b"
+                  tickFormatter={(value) => value.toLocaleString()}
                 />
-                <Legend />
-                <Bar dataKey="humans" stackId="a" fill="#10b981" name="Humans" />
-                <Bar dataKey="bots" stackId="a" fill="#f59e0b" name="Bots" />
+                <YAxis 
+                  dataKey="name" 
+                  type="category" 
+                  stroke="#64748b" 
+                  width={120}
+                  tick={{ fontSize: 12, fontWeight: 500 }}
+                />
+                <Tooltip 
+                  formatter={(value, name) => [value.toLocaleString(), name]}
+                  labelFormatter={(label) => `User: ${label}`}
+                  contentStyle={{ 
+                    backgroundColor: '#1e293b', 
+                    border: 'none', 
+                    borderRadius: '8px',
+                    color: '#fff'
+                  }}
+                />
+                <Legend 
+                  wrapperStyle={{ paddingTop: '20px' }}
+                  iconType="circle"
+                />
+                {/* Side-by-side bars (no stackId) for better visibility */}
+                <Bar 
+                  dataKey="humans" 
+                  fill="#10b981" 
+                  name="🟢 Humans"
+                  radius={[0, 4, 4, 0]}
+                  barSize={16}
+                />
+                <Bar 
+                  dataKey="bots" 
+                  fill="#f59e0b" 
+                  name="🟠 Bots"
+                  radius={[0, 4, 4, 0]}
+                  barSize={16}
+                />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -276,6 +313,26 @@ export default function UsageAnalytics() {
                 <p>No user activity yet</p>
                 <p className="text-sm mt-1">Data will appear once users start generating traffic</p>
               </div>
+            </div>
+          )}
+          
+          {/* Data table for clarity */}
+          {userUsageData.length > 0 && (
+            <div className="mt-4 border-t border-slate-200 pt-4">
+              <div className="grid grid-cols-4 gap-2 text-xs font-medium text-slate-500 mb-2">
+                <div>User</div>
+                <div className="text-emerald-600">Humans</div>
+                <div className="text-amber-600">Bots</div>
+                <div>Total</div>
+              </div>
+              {userUsageData.map((user, idx) => (
+                <div key={idx} className="grid grid-cols-4 gap-2 text-sm py-1 border-b border-slate-100">
+                  <div className="font-medium text-slate-700 truncate">{user.name}</div>
+                  <div className="text-emerald-600 font-semibold">{user.humans.toLocaleString()}</div>
+                  <div className="text-amber-600 font-semibold">{user.bots.toLocaleString()}</div>
+                  <div className="text-slate-500">{user.total.toLocaleString()}</div>
+                </div>
+              ))}
             </div>
           )}
         </Card>
