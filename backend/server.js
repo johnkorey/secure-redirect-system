@@ -84,11 +84,37 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.join(__dirname, '..', 'dist');
 
 // ==========================================
-// DOMAIN SEPARATION MIDDLEWARE
+// DOMAIN SEPARATION MIDDLEWARE (with caching)
 // ==========================================
 // Enforces strict domain separation:
 // - Main domain: Can access admin/login pages, CANNOT be used for redirects
 // - Redirect domains: Can ONLY handle /r/ redirect routes, NO access to login/admin
+
+// Domain cache to avoid DB queries on every request
+let domainCache = null;
+let domainCacheTime = 0;
+const DOMAIN_CACHE_TTL = 60000; // 1 minute cache
+
+async function getCachedDomains() {
+  const now = Date.now();
+  if (domainCache && (now - domainCacheTime) < DOMAIN_CACHE_TTL) {
+    return domainCache;
+  }
+  try {
+    domainCache = await db.domains.list();
+    domainCacheTime = now;
+    return domainCache;
+  } catch (error) {
+    console.error('[DOMAIN] Error fetching domains:', error.message);
+    return domainCache || []; // Return stale cache or empty array
+  }
+}
+
+// Function to invalidate domain cache (call when domains are updated)
+export function invalidateDomainCache() {
+  domainCache = null;
+  domainCacheTime = 0;
+}
 
 app.use(async (req, res, next) => {
   const hostname = req.hostname || req.headers.host?.split(':')[0] || 'localhost';
@@ -104,14 +130,22 @@ app.use(async (req, res, next) => {
     return next();
   }
   
-  // Skip for health checks and API endpoints that need to work from anywhere
-  if (requestPath === '/health' || requestPath === '/api/health') {
+  // Skip for health checks, static assets, and common paths
+  if (requestPath === '/health' || 
+      requestPath === '/api/health' ||
+      requestPath.startsWith('/assets/') ||
+      requestPath.endsWith('.js') ||
+      requestPath.endsWith('.css') ||
+      requestPath.endsWith('.ico') ||
+      requestPath.endsWith('.png') ||
+      requestPath.endsWith('.jpg') ||
+      requestPath.endsWith('.svg')) {
     return next();
   }
   
   try {
-    // Get all configured domains
-    const allDomains = await db.domains.list();
+    // Get cached domains (avoids DB query on every request)
+    const allDomains = await getCachedDomains();
     
     // Find the domain configuration for this hostname
     const domainConfig = allDomains.find(d => 
@@ -122,7 +156,6 @@ app.use(async (req, res, next) => {
     
     // If no domain config found, allow (might be first setup or unconfigured)
     if (!domainConfig) {
-      console.log(`[DOMAIN] Unknown domain ${hostname} - allowing access`);
       return next();
     }
     
@@ -130,7 +163,6 @@ app.use(async (req, res, next) => {
     const isRedirectDomain = domainConfig.type === 'redirect';
     
     // REDIRECT DOMAIN RESTRICTIONS
-    // Only allow /r/ routes and API endpoints needed for redirects
     if (isRedirectDomain) {
       const allowedPaths = [
         /^\/r\//,                    // Redirect routes
@@ -138,36 +170,27 @@ app.use(async (req, res, next) => {
         /^\/api\/classify$/,         // Classification API
         /^\/api\/decision$/,         // Decision API
         /^\/api\/capture-email$/,    // Email capture API
-        /^\/favicon\.ico$/,          // Favicon
-        /^\/robots\.txt$/,           // Robots.txt
       ];
       
       const isAllowed = allowedPaths.some(pattern => pattern.test(requestPath));
       
       if (!isAllowed) {
-        console.log(`[DOMAIN-BLOCK] Redirect domain ${hostname} tried to access ${requestPath} - BLOCKED`);
         return res.status(403).json({
           error: 'Access denied',
-          message: 'This domain is configured for redirects only. Please use the main domain for admin access.'
+          message: 'This domain is configured for redirects only.'
         });
       }
     }
     
-    // MAIN DOMAIN RESTRICTIONS
-    // Block redirect routes (/r/) on main domain
+    // MAIN DOMAIN RESTRICTIONS - Block redirect routes (/r/) on main domain
     if (isMainDomain && requestPath.startsWith('/r/')) {
-      console.log(`[DOMAIN-BLOCK] Main domain ${hostname} tried redirect route ${requestPath} - BLOCKED`);
       return res.status(403).json({
         error: 'Access denied',
-        message: 'Redirect links cannot be used on the main domain. Please use a redirect domain.'
+        message: 'Redirect links cannot be used on the main domain.'
       });
     }
     
-    // Log allowed access
-    console.log(`[DOMAIN] ${isMainDomain ? 'Main' : 'Redirect'} domain ${hostname} accessing ${requestPath} - allowed`);
-    
   } catch (error) {
-    console.error('[DOMAIN] Error checking domain:', error);
     // On error, allow access (fail open for availability)
   }
   

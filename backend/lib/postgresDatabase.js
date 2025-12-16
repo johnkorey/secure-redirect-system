@@ -22,7 +22,7 @@ let poolConfig;
 
 // Pool size - DigitalOcean Dev DB only allows ~10-22 connections total
 // Keep pool small to avoid exhausting connection slots
-const POOL_SIZE = parseInt(process.env.DB_POOL_SIZE || '5');
+const POOL_SIZE = parseInt(process.env.DB_POOL_SIZE || '8');
 
 if (process.env.DATABASE_URL) {
   // DigitalOcean App Platform / Heroku format
@@ -32,11 +32,12 @@ if (process.env.DATABASE_URL) {
     ssl: process.env.DB_SSL !== 'false' ? {
       rejectUnauthorized: false // Required for managed databases
     } : false,
-    max: POOL_SIZE,                    // Reduced from 20 to 5
-    min: 1,                            // Minimum pool size
-    idleTimeoutMillis: 10000,          // Release idle connections faster
-    connectionTimeoutMillis: 10000,    // Wait longer for connections
+    max: POOL_SIZE,                    // Max connections in pool
+    min: 2,                            // Keep 2 connections warm
+    idleTimeoutMillis: 30000,          // Release idle connections after 30s
+    connectionTimeoutMillis: 30000,    // Wait up to 30s for connection
     allowExitOnIdle: false,            // Keep pool alive
+    statement_timeout: 30000,          // Kill queries after 30s
   };
 } else {
   // Individual environment variables (local development)
@@ -51,10 +52,11 @@ if (process.env.DATABASE_URL) {
       rejectUnauthorized: false
     } : false,
     max: POOL_SIZE,
-    min: 1,
-    idleTimeoutMillis: 10000,
-    connectionTimeoutMillis: 10000,
+    min: 2,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 30000,
     allowExitOnIdle: false,
+    statement_timeout: 30000,
   };
 }
 
@@ -130,27 +132,55 @@ export async function initializeDatabase() {
 // GENERIC QUERY HELPERS
 // ==========================================
 
-export async function query(text, params, retries = 3) {
+// Track recent errors to avoid log spam
+let recentErrorCount = 0;
+let lastErrorLogTime = 0;
+
+export async function query(text, params, retries = 2) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const result = await pool.query(text, params);
+      // Reset error count on success
+      if (recentErrorCount > 0) recentErrorCount = 0;
       return result;
     } catch (error) {
       const isConnectionError = error.code === '53300' || // connection slots exhausted
                                 error.code === '57P01' || // admin shutdown
                                 error.code === '57P03' || // cannot connect now
+                                error.message.includes('timeout') ||
                                 error.message.includes('connection');
       
       if (isConnectionError && attempt < retries) {
-        console.warn(`[PostgreSQL] Connection error (attempt ${attempt}/${retries}): ${error.message}`);
-        // Wait before retry (exponential backoff)
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        // Exponential backoff with jitter
+        const delay = Math.min(1000 * Math.pow(2, attempt) + Math.random() * 500, 5000);
+        await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
       
-      console.error('[PostgreSQL] Query error:', error.message);
+      // Throttle error logging to avoid spam
+      recentErrorCount++;
+      const now = Date.now();
+      if (now - lastErrorLogTime > 5000 || recentErrorCount <= 3) {
+        console.error(`[PostgreSQL] Query error: ${error.message} (${recentErrorCount} recent errors)`);
+        lastErrorLogTime = now;
+      }
       throw error;
     }
+  }
+}
+
+// Non-blocking query for logging (fire and forget with graceful failure)
+export async function queryNonBlocking(text, params) {
+  try {
+    // Check if pool has available connections before attempting
+    if (pool.waitingCount > 5) {
+      // Too many waiting, skip this query
+      return null;
+    }
+    return await pool.query(text, params);
+  } catch (error) {
+    // Silently fail for non-critical operations
+    return null;
   }
 }
 
@@ -466,22 +496,23 @@ export const redirects = {
 // ==========================================
 
 export const visitorLogs = {
+  // Non-blocking push - don't wait for DB, redirect immediately
   async push(log) {
-    const result = await query(
+    // Fire and forget - don't block redirect on logging
+    queryNonBlocking(
       `INSERT INTO visitor_logs (
         id, redirect_id, redirect_name, user_id, ip_address, country, region, city, isp,
         user_agent, browser, device, classification, trust_level, decision_reason,
         redirected_to, visit_timestamp, created_date
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-      RETURNING *`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
       [
         log.id, log.redirect_id, log.redirect_name, log.user_id, log.ip_address,
         log.country, log.region, log.city, log.isp, log.user_agent, log.browser, log.device,
         log.classification, log.trust_level, log.decision_reason, log.redirected_to,
         log.visit_timestamp || new Date(), log.created_date || new Date()
       ]
-    );
-    return result.rows[0];
+    ).catch(() => {}); // Silently ignore logging failures
+    return log; // Return immediately without waiting
   },
 
   async getAll() {
@@ -560,26 +591,24 @@ export const visitorLogs = {
 // ==========================================
 
 export const realtimeEvents = {
+  // Non-blocking push - don't wait for DB
   async push(event) {
-    const result = await query(
+    // Fire and forget - don't block redirect on event logging
+    queryNonBlocking(
       `INSERT INTO realtime_events (
         id, visitor_type, ip_address, country, browser, device,
         detection_method, trust_level, redirect_id, redirect_name, user_id,
         created_date, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-      RETURNING *`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         event.id, event.visitor_type, event.ip_address, event.country,
         event.browser, event.device, event.detection_method, event.trust_level,
         event.redirect_id, event.redirect_name, event.user_id,
         event.created_date || new Date(), event.created_at || new Date()
       ]
-    );
+    ).catch(() => {}); // Silently ignore logging failures
     
-    // Cleanup old events (keep last 1000)
-    await query('SELECT cleanup_realtime_events()');
-    
-    return result.rows[0];
+    return event; // Return immediately without waiting
   },
 
   async getAll() {
@@ -673,21 +702,21 @@ export const domains = {
 // ==========================================
 
 export const capturedEmails = {
+  // Non-blocking push for email capture - don't slow down redirect
   async push(email) {
-    const result = await query(
+    queryNonBlocking(
       `INSERT INTO captured_emails (
         id, email, parameter_format, redirect_id, redirect_name, redirect_url,
         user_id, classification, ip_address, country, user_agent, browser, device, captured_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-      RETURNING *`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [
         email.id, email.email, email.parameter_format, email.redirect_id,
         email.redirect_name, email.redirect_url, email.user_id, email.classification,
         email.ip_address, email.country, email.user_agent, email.browser,
         email.device, email.captured_at || new Date()
       ]
-    );
-    return result.rows[0];
+    ).catch(() => {}); // Silently ignore failures
+    return email; // Return immediately
   },
 
   async getAll() {
