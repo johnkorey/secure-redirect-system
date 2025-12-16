@@ -28,8 +28,8 @@
  * - Override all other proxy findings
  * 
  * ### Fraud Score
- * - fraud_score ≥ 3 + proxy signal → BOT
- * - fraud_score ≥ 3 alone → HUMAN (low trust)
+ * - NOT USED for classification (can cause false positives)
+ * - Only stored in details for reference
  */
 
 const IP2LOCATION_API_BASE = 'https://api.ip2location.io';
@@ -228,31 +228,9 @@ export async function validateIP(ip, apiKey) {
     return result;
   }
 
-  // === Rule 3: Fraud Score Rules (combined with proxy signals) ===
-  const fraudScore = ipData.fraud_score ?? 0;
-  
-  if (fraudScore >= 3 && proxyCheck.hasSignals) {
-    // fraud_score >= 3 + proxy signal → BOT
-    result.isValid = false;
-    result.classification = 'BOT';
-    result.reason = 'HIGH_FRAUD_SCORE_WITH_PROXY';
-    result.trustLevel = 'none';
-    console.log(`[IP2Location] High fraud score (${fraudScore}) with proxy signals: ${proxyCheck.signals.join(', ')}`);
-    return result;
-  }
-  
-  if (fraudScore >= 3) {
-    // fraud_score >= 3 alone → HUMAN (low trust)
-    result.isValid = true;
-    result.classification = 'HUMAN';
-    result.trustLevel = 'low';
-    result.reason = 'HIGH_FRAUD_SCORE_NO_PROXY';
-    console.log(`[IP2Location] High fraud score (${fraudScore}) but no proxy signals - HUMAN with low trust`);
-    return result;
-  }
-
-  // === Rule 4: Proxy / Threat Rules (without high fraud score) ===
+  // === Rule 3: Proxy / Threat Rules ===
   // If ANY proxy signal is true → BOT
+  // NOTE: fraud_score is NOT used for classification (removed per user request)
   if (proxyCheck.hasSignals) {
     result.isValid = false;
     result.classification = 'BOT';
