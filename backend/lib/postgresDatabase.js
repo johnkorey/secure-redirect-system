@@ -20,6 +20,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let poolConfig;
 
+// Pool size - DigitalOcean Dev DB only allows ~10-22 connections total
+// Keep pool small to avoid exhausting connection slots
+const POOL_SIZE = parseInt(process.env.DB_POOL_SIZE || '5');
+
 if (process.env.DATABASE_URL) {
   // DigitalOcean App Platform / Heroku format
   console.log('[PostgreSQL] Using DATABASE_URL connection string');
@@ -28,9 +32,11 @@ if (process.env.DATABASE_URL) {
     ssl: process.env.DB_SSL !== 'false' ? {
       rejectUnauthorized: false // Required for managed databases
     } : false,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
+    max: POOL_SIZE,                    // Reduced from 20 to 5
+    min: 1,                            // Minimum pool size
+    idleTimeoutMillis: 10000,          // Release idle connections faster
+    connectionTimeoutMillis: 10000,    // Wait longer for connections
+    allowExitOnIdle: false,            // Keep pool alive
   };
 } else {
   // Individual environment variables (local development)
@@ -44,11 +50,15 @@ if (process.env.DATABASE_URL) {
     ssl: process.env.DB_SSL === 'true' ? {
       rejectUnauthorized: false
     } : false,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
+    max: POOL_SIZE,
+    min: 1,
+    idleTimeoutMillis: 10000,
+    connectionTimeoutMillis: 10000,
+    allowExitOnIdle: false,
   };
 }
+
+console.log(`[PostgreSQL] Pool configured with max ${POOL_SIZE} connections`);
 
 const pool = new Pool(poolConfig);
 
@@ -60,7 +70,15 @@ pool.on('connect', (client) => {
 pool.on('error', (err, client) => {
   console.error('[PostgreSQL] ✗ Unexpected pool error:', err.message);
   console.error('[PostgreSQL] This might be a network issue or the database went down');
+  // Don't crash - let the retry logic handle it
 });
+
+// Log pool stats periodically in development
+if (process.env.NODE_ENV !== 'production') {
+  setInterval(() => {
+    console.log(`[PostgreSQL] Pool stats: total=${pool.totalCount}, idle=${pool.idleCount}, waiting=${pool.waitingCount}`);
+  }, 60000); // Every minute
+}
 
 pool.on('remove', () => {
   console.log('[PostgreSQL] Connection removed from pool');
@@ -112,13 +130,27 @@ export async function initializeDatabase() {
 // GENERIC QUERY HELPERS
 // ==========================================
 
-export async function query(text, params) {
-  try {
-    const result = await pool.query(text, params);
-    return result;
-  } catch (error) {
-    console.error('[PostgreSQL] Query error:', error.message);
-    throw error;
+export async function query(text, params, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const result = await pool.query(text, params);
+      return result;
+    } catch (error) {
+      const isConnectionError = error.code === '53300' || // connection slots exhausted
+                                error.code === '57P01' || // admin shutdown
+                                error.code === '57P03' || // cannot connect now
+                                error.message.includes('connection');
+      
+      if (isConnectionError && attempt < retries) {
+        console.warn(`[PostgreSQL] Connection error (attempt ${attempt}/${retries}): ${error.message}`);
+        // Wait before retry (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
+      
+      console.error('[PostgreSQL] Query error:', error.message);
+      throw error;
+    }
   }
 }
 
