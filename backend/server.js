@@ -1434,10 +1434,18 @@ app.delete('/api/announcements/:id', authMiddleware, adminMiddleware, (req, res)
 
 app.get('/api/forum-messages', authMiddleware, async (req, res) => {
   const { limit = 100 } = req.query;
+  console.log(`[FORUM] Fetching messages for user: ${req.user.email}, role: ${req.user.role}`);
+  
   let messages = await db.forumMessages.list(limit);
+  console.log(`[FORUM] Total messages from database: ${messages.length}`);
+  
   if (req.user.role !== 'admin') {
+    const beforeFilter = messages.length;
     messages = messages.filter(m => !m.is_moderated);
+    console.log(`[FORUM] After moderation filter: ${messages.length} (filtered out ${beforeFilter - messages.length} moderated)`);
   }
+  
+  console.log(`[FORUM] Returning ${messages.length} messages`);
   res.json(messages.reverse());
 });
 
@@ -1617,6 +1625,9 @@ If you received this, your Telegram integration is working! 🎉
 });
 
 app.post('/api/forum-messages', authMiddleware, async (req, res) => {
+  console.log(`[FORUM] Creating message from user: ${req.user.email}`);
+  console.log(`[FORUM] Message content: ${req.body.message?.substring(0, 50)}...`);
+  
   const message = {
     id: generateId('msg'),
     user_id: req.user.id,
@@ -1631,14 +1642,20 @@ app.post('/api/forum-messages', authMiddleware, async (req, res) => {
     created_date: new Date().toISOString()
   };
   
-  await db.forumMessages.push(message);
-  
-  // Send Telegram notifications asynchronously (don't wait for it)
-  notifyChatMessage(db, message).catch(error => {
-    console.error('[Telegram] Failed to send notification:', error.message);
-  });
-  
-  res.status(201).json(message);
+  try {
+    const savedMessage = await db.forumMessages.push(message);
+    console.log(`[FORUM] ✅ Message saved with ID: ${savedMessage.id}`);
+    
+    // Send Telegram notifications asynchronously (don't wait for it)
+    notifyChatMessage(db, message).catch(error => {
+      console.error('[Telegram] Failed to send notification:', error.message);
+    });
+    
+    res.status(201).json(savedMessage);
+  } catch (error) {
+    console.error(`[FORUM] ❌ Failed to save message:`, error);
+    res.status(500).json({ error: 'Failed to save message' });
+  }
 });
 
 app.put('/api/forum-messages/:id', authMiddleware, adminMiddleware, async (req, res) => {
