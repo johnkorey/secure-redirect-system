@@ -1,14 +1,17 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { TrendingUp, Users, Activity, Clock } from 'lucide-react';
+import { TrendingUp, Users, Activity, Clock, Filter, Bot, UserCheck } from 'lucide-react';
 
 const COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899'];
 
 export default function UsageAnalytics() {
-  const { data: visitors = [] } = useQuery({
+  const [classificationFilter, setClassificationFilter] = useState('all'); // 'all', 'HUMAN', 'BOT'
+  
+  const { data: allVisitors = [] } = useQuery({
     queryKey: ['all-visitors-7d'],
     queryFn: () => base44.entities.VisitorLog.list('-created_date', '7d'),
     refetchInterval: 10000, // Auto-refresh every 10 seconds
@@ -20,8 +23,14 @@ export default function UsageAnalytics() {
     refetchInterval: 30000, // Auto-refresh every 30 seconds
   });
 
-  // Daily request data (last 7 days)
-  const dailyData = Array.from({ length: 7 }, (_, i) => {
+  // Filter visitors based on classification
+  const visitors = useMemo(() => {
+    if (classificationFilter === 'all') return allVisitors;
+    return allVisitors.filter(v => v.classification === classificationFilter);
+  }, [allVisitors, classificationFilter]);
+
+  // Daily request data (last 7 days) - based on filtered visitors
+  const dailyData = useMemo(() => Array.from({ length: 7 }, (_, i) => {
     const date = new Date();
     date.setDate(date.getDate() - (6 - i));
     const dayVisitors = visitors.filter(v => {
@@ -34,10 +43,10 @@ export default function UsageAnalytics() {
       humans: dayVisitors.filter(v => v.classification === 'HUMAN').length,
       bots: dayVisitors.filter(v => v.classification === 'BOT').length
     };
-  });
+  }), [visitors]);
 
-  // User usage breakdown - calculate from actual visitor logs
-  const userUsageData = (() => {
+  // User usage breakdown - calculate from filtered visitor logs
+  const userUsageData = useMemo(() => {
     // Count visitors per owner_email (matches apiUser.email)
     const usageCounts = {};
     visitors.forEach(v => {
@@ -58,28 +67,65 @@ export default function UsageAnalytics() {
       .sort((a, b) => b.usage - a.usage)
       .slice(0, 5)
       .filter(u => u.usage > 0); // Only show users with actual usage
-  })();
+  }, [visitors, apiUsers]);
 
-  // Classification outcomes
-  const outcomeData = [
-    { name: 'Humans', value: visitors.filter(v => v.classification === 'HUMAN').length },
-    { name: 'Bots', value: visitors.filter(v => v.classification === 'BOT').length }
-  ];
+  // Classification outcomes (always show totals from all visitors for pie chart)
+  const outcomeData = useMemo(() => [
+    { name: 'Humans', value: allVisitors.filter(v => v.classification === 'HUMAN').length },
+    { name: 'Bots', value: allVisitors.filter(v => v.classification === 'BOT').length }
+  ], [allVisitors]);
 
   const totalRequests = visitors.length;
   const avgResponseTime = 45; // Mock data
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <div className="flex items-center gap-3 mb-2">
-          <h1 className="text-3xl font-bold text-slate-900">Usage Analytics</h1>
-          <span className="flex items-center gap-2 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium">
-            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-            Live
-          </span>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-3xl font-bold text-slate-900">Usage Analytics</h1>
+            <span className="flex items-center gap-2 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium">
+              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+              Live
+            </span>
+          </div>
+          <p className="text-slate-500">API usage statistics and trends • Auto-refreshes every 10s</p>
         </div>
-        <p className="text-slate-500">API usage statistics and trends • Auto-refreshes every 10s</p>
+        
+        {/* Classification Filter */}
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-slate-500" />
+          <span className="text-sm text-slate-500 mr-2">Show:</span>
+          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+            <Button
+              variant={classificationFilter === 'all' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setClassificationFilter('all')}
+              className={`rounded-none ${classificationFilter === 'all' ? 'bg-blue-600 text-white' : ''}`}
+            >
+              <Activity className="w-4 h-4 mr-1" />
+              All ({allVisitors.length.toLocaleString()})
+            </Button>
+            <Button
+              variant={classificationFilter === 'HUMAN' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setClassificationFilter('HUMAN')}
+              className={`rounded-none border-x border-slate-200 ${classificationFilter === 'HUMAN' ? 'bg-emerald-600 text-white' : ''}`}
+            >
+              <UserCheck className="w-4 h-4 mr-1" />
+              Humans ({allVisitors.filter(v => v.classification === 'HUMAN').length.toLocaleString()})
+            </Button>
+            <Button
+              variant={classificationFilter === 'BOT' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setClassificationFilter('BOT')}
+              className={`rounded-none ${classificationFilter === 'BOT' ? 'bg-amber-600 text-white' : ''}`}
+            >
+              <Bot className="w-4 h-4 mr-1" />
+              Bots ({allVisitors.filter(v => v.classification === 'BOT').length.toLocaleString()})
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* Key Metrics */}
