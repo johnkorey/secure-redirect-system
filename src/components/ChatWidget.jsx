@@ -26,7 +26,18 @@ export default function ChatWidget() {
   // Fetch messages - Sort by created_at ascending (oldest first)
   const { data: rawMessages = [] } = useQuery({
     queryKey: ['chat-messages'],
-    queryFn: () => base44.entities.ForumMessage.list('-created_at', 200),
+    queryFn: async () => {
+      const result = await base44.entities.ForumMessage.list('-created_at', 200);
+      console.log('[ChatWidget] Fetched messages:', result?.length || 0);
+      // Log breakdown by sender_role
+      const roleCounts = {};
+      result?.forEach(m => {
+        const role = m.sender_role || 'undefined';
+        roleCounts[role] = (roleCounts[role] || 0) + 1;
+      });
+      console.log('[ChatWidget] Messages by sender_role:', roleCounts);
+      return result;
+    },
     refetchInterval: 2000, // Refetch every 2 seconds for faster updates
   });
 
@@ -52,7 +63,9 @@ export default function ChatWidget() {
     },
     onSuccess: () => {
       setMessage('');
+      // Invalidate both query keys to ensure both ChatWidget and ForumChat update
       queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
+      queryClient.invalidateQueries({ queryKey: ['forum-messages'] });
       setTimeout(() => scrollToBottom(), 100);
     },
     onError: (error) => {

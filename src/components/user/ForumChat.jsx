@@ -15,14 +15,27 @@ export default function ForumChat({ apiUser }) {
 
   const { data: messages = [] } = useQuery({
     queryKey: ['forum-messages'],
-    queryFn: () => base44.entities.ForumMessage.list('-created_date', 50),
+    queryFn: async () => {
+      const result = await base44.entities.ForumMessage.list('-created_date', 50);
+      console.log('[ForumChat] Fetched messages:', result?.length || 0);
+      // Log breakdown by sender_role
+      const roleCounts = {};
+      result?.forEach(m => {
+        const role = m.sender_role || 'undefined';
+        roleCounts[role] = (roleCounts[role] || 0) + 1;
+      });
+      console.log('[ForumChat] Messages by sender_role:', roleCounts);
+      return result;
+    },
     refetchInterval: 5000, // Auto-refresh every 5 seconds
   });
 
   const sendMessageMutation = useMutation({
     mutationFn: (data) => base44.entities.ForumMessage.create(data),
     onSuccess: () => {
+      // Invalidate both query keys to ensure both ChatWidget and ForumChat update
       queryClient.invalidateQueries({ queryKey: ['forum-messages'] });
+      queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
       setMessage('');
       toast.success('Message sent!');
     },
@@ -37,6 +50,9 @@ export default function ForumChat({ apiUser }) {
 
     sendMessageMutation.mutate({
       user_id: apiUser.id,
+      sender_email: apiUser.email, // Add email for proper tracking
+      sender_name: apiUser.display_name,
+      sender_role: 'user', // Explicitly set as user
       display_name: apiUser.display_name,
       message: message.trim(),
       is_support: false,

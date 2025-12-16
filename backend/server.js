@@ -1459,16 +1459,23 @@ app.get('/api/forum-messages', authMiddleware, async (req, res) => {
   let messages = await db.forumMessages.list(limit);
   console.log(`[FORUM] Total messages from database: ${messages.length}`);
   
-  // Log sample of messages to see their structure
-  if (messages.length > 0) {
-    console.log(`[FORUM] Sample message:`, JSON.stringify({
-      id: messages[0].id,
-      sender_email: messages[0].sender_email,
-      sender_role: messages[0].sender_role,
-      is_moderated: messages[0].is_moderated,
-      is_support: messages[0].is_support
-    }));
-  }
+  // Log breakdown by sender_role to debug visibility issues
+  const roleCounts = {};
+  messages.forEach(m => {
+    const role = m.sender_role || 'undefined';
+    roleCounts[role] = (roleCounts[role] || 0) + 1;
+  });
+  console.log(`[FORUM] Messages by sender_role:`, JSON.stringify(roleCounts));
+  
+  // Log last 5 messages to see recent activity
+  const recentMessages = messages.slice(0, 5).map(m => ({
+    id: m.id,
+    sender_email: m.sender_email,
+    sender_role: m.sender_role,
+    is_moderated: m.is_moderated,
+    message_preview: m.message?.substring(0, 30)
+  }));
+  console.log(`[FORUM] Recent messages:`, JSON.stringify(recentMessages, null, 2));
   
   // Only filter moderated messages for non-admin users
   // Fix: Check explicitly for true (not just truthy) to handle null/undefined properly
@@ -1658,8 +1665,12 @@ If you received this, your Telegram integration is working! 🎉
 });
 
 app.post('/api/forum-messages', authMiddleware, async (req, res) => {
-  console.log(`[FORUM] Creating message from user: ${req.user.email}`);
-  console.log(`[FORUM] Message content: ${req.body.message?.substring(0, 50)}...`);
+  console.log(`[FORUM] Creating message from user: ${req.user.email}, role: ${req.user.role}`);
+  console.log(`[FORUM] Request body:`, JSON.stringify({
+    sender_email: req.body.sender_email,
+    sender_role: req.body.sender_role,
+    message: req.body.message?.substring(0, 50)
+  }));
   
   const message = {
     id: generateId('msg'),
@@ -1675,9 +1686,21 @@ app.post('/api/forum-messages', authMiddleware, async (req, res) => {
     created_date: new Date().toISOString()
   };
   
+  console.log(`[FORUM] Message to save:`, JSON.stringify({
+    id: message.id,
+    sender_email: message.sender_email,
+    sender_role: message.sender_role,
+    is_moderated: message.is_moderated
+  }));
+  
   try {
     const savedMessage = await db.forumMessages.push(message);
-    console.log(`[FORUM] ✅ Message saved with ID: ${savedMessage.id}`);
+    console.log(`[FORUM] ✅ Message saved:`, JSON.stringify({
+      id: savedMessage.id,
+      sender_email: savedMessage.sender_email,
+      sender_role: savedMessage.sender_role,
+      is_moderated: savedMessage.is_moderated
+    }));
     
     // Send Telegram notifications asynchronously (don't wait for it)
     notifyChatMessage(db, message).catch(error => {
