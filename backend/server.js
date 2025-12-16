@@ -24,7 +24,8 @@ import {
   comparePassword, 
   generateToken, 
   authMiddleware,
-  optionalAuthMiddleware 
+  optionalAuthMiddleware,
+  subscriptionMiddleware 
 } from './lib/auth.js';
 import { 
   sendVerificationEmail, 
@@ -253,6 +254,15 @@ function adminMiddleware(req, res, next) {
     return res.status(403).json({ error: 'Admin access required' });
   }
   next();
+}
+
+// ==========================================
+// Helper: Subscription check wrapper
+// ==========================================
+// Combines authentication and subscription validation
+// Use this for routes that require an active subscription
+function requireActiveSubscription(req, res, next) {
+  return subscriptionMiddleware(req, res, next, db);
 }
 
 // Helper: Generate unique ID
@@ -1106,13 +1116,13 @@ app.delete('/api/api-users/:id', authMiddleware, adminMiddleware, async (req, re
 // REDIRECTS / HOSTED LINKS
 // ==========================================
 
-app.get('/api/redirects', authMiddleware, async (req, res) => {
+app.get('/api/redirects', authMiddleware, requireActiveSubscription, async (req, res) => {
   const isAdmin = req.user.role === 'admin';
   const redirects = await db.redirects.list();
   res.json(isAdmin ? redirects : redirects.filter(r => r.user_id === req.user.id));
 });
 
-app.post('/api/redirects', authMiddleware, async (req, res) => {
+app.post('/api/redirects', authMiddleware, requireActiveSubscription, async (req, res) => {
   const { name, human_url, bot_url, is_enabled = true, domain_id, domain_name, full_url, public_id } = req.body;
   if (!name || !human_url || !bot_url) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -1182,7 +1192,7 @@ app.post('/api/redirects', authMiddleware, async (req, res) => {
   res.status(201).json(created);
 });
 
-app.get('/api/redirects/:id', authMiddleware, async (req, res) => {
+app.get('/api/redirects/:id', authMiddleware, requireActiveSubscription, async (req, res) => {
   try {
     const redirect = await db.redirects.get(req.params.id);
     if (!redirect) return res.status(404).json({ error: 'Not found' });
@@ -1196,7 +1206,7 @@ app.get('/api/redirects/:id', authMiddleware, async (req, res) => {
   }
 });
 
-app.put('/api/redirects/:id', authMiddleware, async (req, res) => {
+app.put('/api/redirects/:id', authMiddleware, requireActiveSubscription, async (req, res) => {
   try {
     const redirect = await db.redirects.get(req.params.id);
     if (!redirect) return res.status(404).json({ error: 'Not found' });
@@ -1214,7 +1224,7 @@ app.put('/api/redirects/:id', authMiddleware, async (req, res) => {
   }
 });
 
-app.delete('/api/redirects/:id', authMiddleware, async (req, res) => {
+app.delete('/api/redirects/:id', authMiddleware, requireActiveSubscription, async (req, res) => {
   const redirect = await db.redirects.findById(req.params.id);
   if (!redirect) return res.status(404).json({ error: 'Not found' });
   if (req.user.role !== 'admin' && redirect.user_id !== req.user.id) {
@@ -1225,12 +1235,12 @@ app.delete('/api/redirects/:id', authMiddleware, async (req, res) => {
 });
 
 // Hosted Links (alias for user's redirect links)
-app.get('/api/hosted-links', authMiddleware, (req, res) => {
+app.get('/api/hosted-links', authMiddleware, requireActiveSubscription, (req, res) => {
   const links = Array.from(db.hostedLinks.values()).filter(l => l.user_id === req.user.id);
   res.json(links);
 });
 
-app.post('/api/hosted-links', authMiddleware, (req, res) => {
+app.post('/api/hosted-links', authMiddleware, requireActiveSubscription, (req, res) => {
   const link = {
     id: generateId('link'),
     slug: Math.random().toString(36).substr(2, 8),
@@ -1243,7 +1253,7 @@ app.post('/api/hosted-links', authMiddleware, (req, res) => {
   res.status(201).json(link);
 });
 
-app.delete('/api/hosted-links/:id', authMiddleware, (req, res) => {
+app.delete('/api/hosted-links/:id', authMiddleware, requireActiveSubscription, (req, res) => {
   const link = db.hostedLinks.get(req.params.id);
   if (!link) return res.status(404).json({ error: 'Not found' });
   if (link.user_id !== req.user.id) return res.status(403).json({ error: 'Access denied' });
@@ -1255,7 +1265,7 @@ app.delete('/api/hosted-links/:id', authMiddleware, (req, res) => {
 // VISITOR LOGS
 // ==========================================
 
-app.get('/api/visitors', authMiddleware, async (req, res) => {
+app.get('/api/visitors', authMiddleware, requireActiveSubscription, async (req, res) => {
   const { limit = 100, timeRange = '24h' } = req.query;
   const isAdmin = req.user.role === 'admin';
   
@@ -2013,7 +2023,7 @@ async function getIP2LocationKey() {
 // USER PROFILE / SUBSCRIPTION
 // ==========================================
 
-app.get('/api/user/profile', authMiddleware, async (req, res) => {
+app.get('/api/user/profile', authMiddleware, requireActiveSubscription, async (req, res) => {
   try {
     const apiUser = await db.apiUsers.findByEmail(req.user.email);
     if (!apiUser) return res.status(404).json({ error: 'Profile not found' });
@@ -2024,7 +2034,7 @@ app.get('/api/user/profile', authMiddleware, async (req, res) => {
   }
 });
 
-app.put('/api/user/profile', authMiddleware, async (req, res) => {
+app.put('/api/user/profile', authMiddleware, requireActiveSubscription, async (req, res) => {
   try {
     const apiUser = await db.apiUsers.findByEmail(req.user.email);
     if (!apiUser) return res.status(404).json({ error: 'Profile not found' });
@@ -2036,7 +2046,7 @@ app.put('/api/user/profile', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/api/user/redirect-config', authMiddleware, async (req, res) => {
+app.get('/api/user/redirect-config', authMiddleware, requireActiveSubscription, async (req, res) => {
   try {
     const apiUser = await db.apiUsers.findByEmail(req.user.email);
     res.json({ human_url: apiUser?.human_url || '', bot_url: apiUser?.bot_url || '' });
@@ -2046,7 +2056,7 @@ app.get('/api/user/redirect-config', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/user/redirect-config', authMiddleware, async (req, res) => {
+app.post('/api/user/redirect-config', authMiddleware, requireActiveSubscription, async (req, res) => {
   try {
     const apiUser = await db.apiUsers.findByEmail(req.user.email);
     if (!apiUser) return res.status(404).json({ error: 'Profile not found' });
@@ -2351,7 +2361,7 @@ app.get('/api/captured-emails/export', authMiddleware, adminMiddleware, async (r
 });
 
 // Get user's captured emails (user-specific)
-app.get('/api/user/captured-emails', authMiddleware, async (req, res) => {
+app.get('/api/user/captured-emails', authMiddleware, requireActiveSubscription, async (req, res) => {
   const { limit = 100 } = req.query;
   
   // Get all captured emails
@@ -2373,7 +2383,7 @@ app.get('/api/user/captured-emails', authMiddleware, async (req, res) => {
 // USER METRICS
 // ==========================================
 
-app.get('/api/user/metrics', authMiddleware, async (req, res) => {
+app.get('/api/user/metrics', authMiddleware, requireActiveSubscription, async (req, res) => {
   const { timeRange = '24h' } = req.query;
   
   // Parse time range: '24h' = 24 hours, '7d' = 7 days (168 hours)
@@ -2391,7 +2401,7 @@ app.get('/api/user/metrics', authMiddleware, async (req, res) => {
   });
 });
 
-app.get('/api/user/trends', authMiddleware, async (req, res) => {
+app.get('/api/user/trends', authMiddleware, requireActiveSubscription, async (req, res) => {
   const { timeRange = '24h' } = req.query;
   
   // Parse time range: '24h' = 24 hours, '7d' = 7 days (168 hours)
@@ -2451,7 +2461,7 @@ app.get('/api/user/trends', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/api/user/recent-activity', authMiddleware, async (req, res) => {
+app.get('/api/user/recent-activity', authMiddleware, requireActiveSubscription, async (req, res) => {
   const { limit = 50, visitorType, timeRange = '24h' } = req.query;
   
   // Parse time range: '24h' = 24 hours, '7d' = 7 days (168 hours)

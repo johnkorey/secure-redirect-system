@@ -96,12 +96,71 @@ export function optionalAuthMiddleware(req, res, next) {
   next();
 }
 
+/**
+ * Subscription validation middleware
+ * Checks if user's subscription is active (not expired)
+ * Must be used after authMiddleware
+ * Admins bypass this check
+ */
+export async function subscriptionMiddleware(req, res, next, db) {
+  try {
+    // Admin users bypass subscription checks
+    if (req.user.role === 'admin') {
+      return next();
+    }
+
+    // Get user's subscription details from API user
+    const apiUser = await db.apiUsers.findByEmail(req.user.email);
+    
+    if (!apiUser) {
+      return res.status(403).json({ 
+        error: 'Subscription not found',
+        code: 'NO_SUBSCRIPTION',
+        requiresRenewal: true
+      });
+    }
+
+    // Check if subscription has expired
+    if (apiUser.subscription_expiry) {
+      const expiryDate = new Date(apiUser.subscription_expiry);
+      const now = new Date();
+
+      if (expiryDate < now) {
+        return res.status(403).json({ 
+          error: 'Your subscription has expired. Please renew to continue using the service.',
+          code: 'SUBSCRIPTION_EXPIRED',
+          expiredAt: apiUser.subscription_expiry,
+          requiresRenewal: true
+        });
+      }
+    }
+
+    // Check if subscription is active
+    if (apiUser.status !== 'active') {
+      return res.status(403).json({ 
+        error: 'Your subscription is not active. Please contact support or renew your subscription.',
+        code: 'SUBSCRIPTION_INACTIVE',
+        status: apiUser.status,
+        requiresRenewal: true
+      });
+    }
+
+    // Attach apiUser to request for later use
+    req.apiUser = apiUser;
+    next();
+  } catch (error) {
+    console.error('[SUBSCRIPTION-CHECK] Error:', error);
+    return res.status(500).json({ error: 'Failed to validate subscription' });
+  }
+}
+
 export default {
   hashPassword,
   comparePassword,
   generateToken,
   verifyToken,
   authMiddleware,
-  optionalAuthMiddleware
+  optionalAuthMiddleware,
+  subscriptionMiddleware
 };
 
