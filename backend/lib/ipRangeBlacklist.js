@@ -141,6 +141,15 @@ function saveBlacklist() {
 }
 
 /**
+ * Check if an IP address is IPv6
+ * @param {string} ip - IP address to check
+ * @returns {boolean}
+ */
+function isIPv6(ip) {
+  return ip && ip.includes(':');
+}
+
+/**
  * Check if IP is in blacklist
  * Returns immediately without any API calls!
  * @param {string} ip - IP address to check
@@ -148,6 +157,13 @@ function saveBlacklist() {
  */
 export function isIPBlacklisted(ip) {
   if (!ip || ip === '127.0.0.1' || ip === '::1') {
+    return null;
+  }
+  
+  // Skip IPv6 addresses - our CIDR logic only supports IPv4
+  // IPv6 addresses will be validated via IP2Location API instead
+  if (isIPv6(ip)) {
+    console.log(`[IP-Range-Blacklist] Skipping IPv6 address: ${ip.substring(0, 20)}...`);
     return null;
   }
   
@@ -190,6 +206,12 @@ export function isIPBlacklisted(ip) {
  */
 export function addToBlacklist(ip, decision) {
   if (!ip || ip === '127.0.0.1' || ip === '::1') {
+    return null;
+  }
+  
+  // Skip IPv6 addresses - our CIDR logic only supports IPv4
+  if (isIPv6(ip)) {
+    console.log(`[IP-Range-Blacklist] Skipping IPv6 address (not adding to blacklist): ${ip.substring(0, 20)}...`);
     return null;
   }
   
