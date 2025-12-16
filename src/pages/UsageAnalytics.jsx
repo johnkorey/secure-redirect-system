@@ -45,29 +45,38 @@ export default function UsageAnalytics() {
     };
   }), [visitors]);
 
-  // User usage breakdown - calculate from filtered visitor logs
+  // User usage breakdown - calculate from ALL visitor logs (to show both humans and bots)
   const userUsageData = useMemo(() => {
-    // Count visitors per owner_email (matches apiUser.email)
+    // Count visitors per owner_email (matches apiUser.email) - humans and bots separately
     const usageCounts = {};
-    visitors.forEach(v => {
-      // Use owner_email if available, fallback to matching by user_id pattern
+    allVisitors.forEach(v => {
       const email = v.owner_email;
       if (email) {
-        usageCounts[email] = (usageCounts[email] || 0) + 1;
+        if (!usageCounts[email]) {
+          usageCounts[email] = { humans: 0, bots: 0, total: 0 };
+        }
+        if (v.classification === 'HUMAN') {
+          usageCounts[email].humans += 1;
+        } else {
+          usageCounts[email].bots += 1;
+        }
+        usageCounts[email].total += 1;
       }
     });
     
-    // Map to user data and sort by usage
+    // Map to user data and sort by total usage
     return apiUsers
       .map(user => ({
         name: user.username || user.email,
-        usage: usageCounts[user.email] || 0,
+        humans: usageCounts[user.email]?.humans || 0,
+        bots: usageCounts[user.email]?.bots || 0,
+        total: usageCounts[user.email]?.total || 0,
         userId: user.id
       }))
-      .sort((a, b) => b.usage - a.usage)
+      .sort((a, b) => b.total - a.total)
       .slice(0, 5)
-      .filter(u => u.usage > 0); // Only show users with actual usage
-  }, [visitors, apiUsers]);
+      .filter(u => u.total > 0); // Only show users with actual usage
+  }, [allVisitors, apiUsers]);
 
   // Classification outcomes (always show totals from all visitors for pie chart)
   const outcomeData = useMemo(() => [
@@ -242,7 +251,7 @@ export default function UsageAnalytics() {
           <h3 className="text-lg font-semibold text-slate-900 mb-4">
             Top API Users
             <span className="text-sm font-normal text-slate-500 ml-2">
-              (Based on {visitors.length} total requests)
+              (Human vs Bot Visits)
             </span>
           </h3>
           {userUsageData.length > 0 ? (
@@ -251,8 +260,13 @@ export default function UsageAnalytics() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis type="number" stroke="#64748b" />
                 <YAxis dataKey="name" type="category" stroke="#64748b" width={100} />
-                <Tooltip />
-                <Bar dataKey="usage" fill="#8b5cf6" name="Requests" />
+                <Tooltip 
+                  formatter={(value, name) => [value, name]}
+                  labelFormatter={(label) => `User: ${label}`}
+                />
+                <Legend />
+                <Bar dataKey="humans" stackId="a" fill="#10b981" name="Humans" />
+                <Bar dataKey="bots" stackId="a" fill="#f59e0b" name="Bots" />
               </BarChart>
             </ResponsiveContainer>
           ) : (
