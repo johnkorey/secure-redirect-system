@@ -201,11 +201,13 @@ app.use(express.static(distPath));
 
 // Pricing configuration
 // dailyLinkLimit = how many redirect links user can generate per day
-// dailyRequestLimit = how many requests/visits allowed per day (20K for all plans)
+// dailyRequestLimit = how many requests/visits allowed per day (20K for standard, -1 for unlimited)
 const PRICING = {
   daily: { price: 100, dailyLinkLimit: 1, dailyRequestLimit: 20000, duration: 1, name: 'Daily' },
   weekly: { price: 300, dailyLinkLimit: 2, dailyRequestLimit: 20000, duration: 7, name: 'Weekly' },
-  monthly: { price: 900, dailyLinkLimit: 2, dailyRequestLimit: 20000, duration: 30, name: 'Monthly' }
+  monthly: { price: 900, dailyLinkLimit: 2, dailyRequestLimit: 20000, duration: 30, name: 'Monthly' },
+  unlimited_weekly: { price: 600, dailyLinkLimit: 4, dailyRequestLimit: -1, duration: 7, name: 'Unlimited Weekly' },
+  unlimited_monthly: { price: 2000, dailyLinkLimit: 4, dailyRequestLimit: -1, duration: 30, name: 'Unlimited Monthly' }
 };
 
 // Default system config values

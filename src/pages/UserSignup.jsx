@@ -22,8 +22,10 @@ const API_URL = getBackendUrl();
 
 const PLANS = [
   { id: 'daily', name: 'Daily', price: 100, links: 1, requests: 20000, duration: '1 day' },
-  { id: 'weekly', name: 'Weekly', price: 300, links: 2, requests: 20000, duration: '7 days', popular: true },
-  { id: 'monthly', name: 'Monthly', price: 900, links: 2, requests: 20000, duration: '30 days' }
+  { id: 'weekly', name: 'Weekly', price: 300, links: 2, requests: 20000, duration: '7 days' },
+  { id: 'monthly', name: 'Monthly', price: 900, links: 2, requests: 20000, duration: '30 days' },
+  { id: 'unlimited_weekly', name: 'Unlimited Weekly', price: 600, links: 4, requests: -1, duration: '7 days', popular: true },
+  { id: 'unlimited_monthly', name: 'Unlimited Monthly', price: 2000, links: 4, requests: -1, duration: '30 days' }
 ];
 
 export default function UserSignup() {
@@ -209,30 +211,57 @@ export default function UserSignup() {
 
             {step === 1 ? (
               <form onSubmit={handleSignup} className="space-y-6">
-                {/* Plan Selection */}
-                <div className="grid grid-cols-3 gap-3">
-                  {PLANS.map((plan) => (
-                    <div
-                      key={plan.id}
-                      onClick={() => setForm({ ...form, accessType: plan.id })}
-                      className={`relative p-4 rounded-lg cursor-pointer transition-all ${
-                        form.accessType === plan.id
-                          ? 'bg-emerald-500/20 border-2 border-emerald-500'
-                          : 'bg-slate-700/50 border-2 border-transparent hover:border-slate-600'
-                      }`}
-                    >
-                      {plan.popular && (
-                        <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-xs px-2 py-0.5 rounded-full">
-                          Popular
-                        </span>
-                      )}
-                      <div className="text-center">
-                        <p className="text-white font-semibold">{plan.name}</p>
-                        <p className="text-2xl font-bold text-emerald-400 mt-1">${plan.price}</p>
-                        <p className="text-xs text-slate-400 mt-1">{plan.links} link{plan.links > 1 ? 's' : ''}/day • 20K req</p>
+                {/* Plan Selection - Standard Plans */}
+                <div>
+                  <p className="text-xs text-slate-500 mb-2 uppercase tracking-wide">Standard Plans</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    {PLANS.filter(p => !p.id.startsWith('unlimited')).map((plan) => (
+                      <div
+                        key={plan.id}
+                        onClick={() => setForm({ ...form, accessType: plan.id })}
+                        className={`relative p-4 rounded-lg cursor-pointer transition-all ${
+                          form.accessType === plan.id
+                            ? 'bg-emerald-500/20 border-2 border-emerald-500'
+                            : 'bg-slate-700/50 border-2 border-transparent hover:border-slate-600'
+                        }`}
+                      >
+                        <div className="text-center">
+                          <p className="text-white font-semibold text-sm">{plan.name}</p>
+                          <p className="text-xl font-bold text-emerald-400 mt-1">${plan.price}</p>
+                          <p className="text-xs text-slate-400 mt-1">{plan.links} link{plan.links > 1 ? 's' : ''}/day • 20K req</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                </div>
+
+                {/* Plan Selection - Unlimited Plans */}
+                <div>
+                  <p className="text-xs text-slate-500 mb-2 uppercase tracking-wide">Unlimited Plans</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {PLANS.filter(p => p.id.startsWith('unlimited')).map((plan) => (
+                      <div
+                        key={plan.id}
+                        onClick={() => setForm({ ...form, accessType: plan.id })}
+                        className={`relative p-4 rounded-lg cursor-pointer transition-all ${
+                          form.accessType === plan.id
+                            ? 'bg-amber-500/20 border-2 border-amber-500'
+                            : 'bg-slate-700/50 border-2 border-transparent hover:border-slate-600'
+                        }`}
+                      >
+                        {plan.popular && (
+                          <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full">
+                            Popular
+                          </span>
+                        )}
+                        <div className="text-center">
+                          <p className="text-white font-semibold">{plan.name}</p>
+                          <p className="text-2xl font-bold text-amber-400 mt-1">${plan.price}</p>
+                          <p className="text-xs text-slate-400 mt-1">{plan.links} links/day • <span className="text-amber-400">∞ requests</span></p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -318,14 +347,16 @@ export default function UserSignup() {
                 </div>
 
                 {/* Summary */}
-                <div className="p-4 bg-slate-700/30 rounded-lg">
+                <div className={`p-4 rounded-lg ${selectedPlan?.requests === -1 ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-slate-700/30'}`}>
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-400">Selected Plan:</span>
                     <span className="text-white font-medium">{selectedPlan?.name} - ${selectedPlan?.price}</span>
                   </div>
                   <div className="flex justify-between text-sm mt-1">
                     <span className="text-slate-400">Daily Limits:</span>
-                    <span className="text-emerald-400">{selectedPlan?.links} link{selectedPlan?.links > 1 ? 's' : ''} • 20K requests</span>
+                    <span className={selectedPlan?.requests === -1 ? 'text-amber-400' : 'text-emerald-400'}>
+                      {selectedPlan?.links} link{selectedPlan?.links > 1 ? 's' : ''} • {selectedPlan?.requests === -1 ? '∞ Unlimited requests' : '20K requests'}
+                    </span>
                   </div>
                 </div>
 
