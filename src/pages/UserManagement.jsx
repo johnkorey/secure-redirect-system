@@ -290,19 +290,42 @@ export default function UserManagement() {
   );
 }
 
+// Plan defaults for auto-fill
+const PLAN_DEFAULTS = {
+  free: { daily_link_limit: 1, daily_request_limit: 1000 },
+  daily: { daily_link_limit: 1, daily_request_limit: 20000 },
+  weekly: { daily_link_limit: 2, daily_request_limit: 20000 },
+  monthly: { daily_link_limit: 2, daily_request_limit: 20000 },
+  unlimited_weekly: { daily_link_limit: 4, daily_request_limit: -1 },
+  unlimited_monthly: { daily_link_limit: 4, daily_request_limit: -1 },
+  unlimited: { daily_link_limit: 999999, daily_request_limit: -1 }
+};
+
 function UserForm({ user, onSave }) {
   const [formData, setFormData] = useState(user || {
     username: '',
     email: '',
     access_type: 'free',
     status: 'active',
-    daily_link_limit: 2,
+    daily_link_limit: 1,
+    daily_request_limit: 1000,
     subscription_start: '',
     subscription_expiry: '',
     display_name: '',
     telegram_chat_id: '',
     referral_code: ''
   });
+
+  // Auto-fill limits when access type changes
+  const handleAccessTypeChange = (accessType) => {
+    const defaults = PLAN_DEFAULTS[accessType] || PLAN_DEFAULTS.free;
+    setFormData({ 
+      ...formData, 
+      access_type: accessType,
+      daily_link_limit: defaults.daily_link_limit,
+      daily_request_limit: defaults.daily_request_limit
+    });
+  };
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSave(formData); }} className="space-y-4">
@@ -329,16 +352,18 @@ function UserForm({ user, onSave }) {
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>Access Type</Label>
-          <Select value={formData.access_type} onValueChange={(v) => setFormData({ ...formData, access_type: v })}>
+          <Select value={formData.access_type} onValueChange={handleAccessTypeChange}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="free">Free</SelectItem>
-              <SelectItem value="daily">Daily</SelectItem>
-              <SelectItem value="weekly">Weekly</SelectItem>
-              <SelectItem value="monthly">Monthly</SelectItem>
-              <SelectItem value="unlimited">Unlimited</SelectItem>
+              <SelectItem value="daily">Daily ($100 - 1 link/day)</SelectItem>
+              <SelectItem value="weekly">Weekly ($300 - 2 links/day)</SelectItem>
+              <SelectItem value="monthly">Monthly ($900 - 2 links/day)</SelectItem>
+              <SelectItem value="unlimited_weekly">Unlimited Weekly ($600 - 4 links/day, ∞ requests)</SelectItem>
+              <SelectItem value="unlimited_monthly">Unlimited Monthly ($2000 - 4 links/day, ∞ requests)</SelectItem>
+              <SelectItem value="unlimited">Unlimited (Legacy)</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -357,7 +382,7 @@ function UserForm({ user, onSave }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label>Daily Link Limit</Label>
           <Input
@@ -365,6 +390,16 @@ function UserForm({ user, onSave }) {
             value={formData.daily_link_limit}
             onChange={(e) => setFormData({ ...formData, daily_link_limit: parseInt(e.target.value) })}
           />
+        </div>
+        <div className="space-y-2">
+          <Label>Daily Request Limit</Label>
+          <Input
+            type="number"
+            value={formData.daily_request_limit === -1 ? '' : formData.daily_request_limit}
+            placeholder={formData.daily_request_limit === -1 ? '∞ Unlimited' : ''}
+            onChange={(e) => setFormData({ ...formData, daily_request_limit: e.target.value === '' ? -1 : parseInt(e.target.value) })}
+          />
+          <p className="text-xs text-slate-500">-1 or empty = unlimited</p>
         </div>
         <div className="space-y-2">
           <Label>Display Name</Label>
