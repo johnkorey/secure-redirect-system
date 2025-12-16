@@ -135,6 +135,16 @@ export async function subscriptionMiddleware(req, res, next, db) {
       }
     }
 
+    // Check if user is banned
+    if (apiUser.status === 'banned') {
+      return res.status(403).json({ 
+        error: 'Your account has been suspended. Please contact support for assistance.',
+        code: 'ACCOUNT_BANNED',
+        status: apiUser.status,
+        requiresRenewal: false
+      });
+    }
+
     // Check if subscription is active
     if (apiUser.status !== 'active') {
       return res.status(403).json({ 

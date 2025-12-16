@@ -6,12 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Edit, UserPlus, Copy, Eye, EyeOff, Trash2 } from 'lucide-react';
+import { Plus, Edit, Copy, Trash2, Ban, ShieldCheck, CalendarPlus, Link2, ArrowUpCircle, MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { format, addDays } from 'date-fns';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,12 +22,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 export default function UserManagement() {
   const [editUser, setEditUser] = useState(null);
   const [showDialog, setShowDialog] = useState(false);
   const [deleteUser, setDeleteUser] = useState(null);
   const [newUserCredentials, setNewUserCredentials] = useState(null);
+  const [quickActionUser, setQuickActionUser] = useState(null);
+  const [quickActionType, setQuickActionType] = useState(null); // 'upgrade', 'addDays', 'addLinks', 'ban', 'unban'
+  const [quickActionValue, setQuickActionValue] = useState('');
   const queryClient = useQueryClient();
 
   const { data: users = [] } = useQuery({
@@ -97,10 +108,60 @@ export default function UserManagement() {
     }
   };
 
+  // Quick action handlers
+  const handleQuickAction = () => {
+    if (!quickActionUser) return;
+    
+    let updateData = {};
+    
+    switch (quickActionType) {
+      case 'upgrade':
+        const planDefaults = PLAN_DEFAULTS[quickActionValue] || {};
+        updateData = {
+          access_type: quickActionValue,
+          daily_link_limit: planDefaults.daily_link_limit,
+          daily_request_limit: planDefaults.daily_request_limit
+        };
+        break;
+      case 'addDays':
+        const daysToAdd = parseInt(quickActionValue) || 0;
+        const currentExpiry = quickActionUser.subscription_expiry 
+          ? new Date(quickActionUser.subscription_expiry) 
+          : new Date();
+        const newExpiry = addDays(currentExpiry > new Date() ? currentExpiry : new Date(), daysToAdd);
+        updateData = { subscription_expiry: newExpiry.toISOString() };
+        break;
+      case 'addLinks':
+        const linksToAdd = parseInt(quickActionValue) || 0;
+        updateData = { daily_link_limit: (quickActionUser.daily_link_limit || 0) + linksToAdd };
+        break;
+      case 'ban':
+        updateData = { status: 'banned' };
+        break;
+      case 'unban':
+        updateData = { status: 'active' };
+        break;
+      default:
+        return;
+    }
+    
+    updateMutation.mutate({ id: quickActionUser.id, data: updateData });
+    setQuickActionUser(null);
+    setQuickActionType(null);
+    setQuickActionValue('');
+  };
+
+  const openQuickAction = (user, type) => {
+    setQuickActionUser(user);
+    setQuickActionType(type);
+    setQuickActionValue(type === 'upgrade' ? user.access_type : '');
+  };
+
   const statusColors = {
     active: 'bg-emerald-100 text-emerald-700',
     paused: 'bg-amber-100 text-amber-700',
-    expired: 'bg-red-100 text-red-700'
+    expired: 'bg-red-100 text-red-700',
+    banned: 'bg-red-600 text-white'
   };
 
   const copyToClipboard = (text, label) => {
@@ -237,7 +298,7 @@ export default function UserManagement() {
                   }
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <Button
                       size="sm"
                       variant="outline"
@@ -245,17 +306,51 @@ export default function UserManagement() {
                         setEditUser(user);
                         setShowDialog(true);
                       }}
+                      title="Edit User"
                     >
                       <Edit className="w-3 h-3" />
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                      onClick={() => setDeleteUser(user)}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
+                    
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline">
+                          <MoreHorizontal className="w-3 h-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Quick Actions</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => openQuickAction(user, 'upgrade')}>
+                          <ArrowUpCircle className="w-4 h-4 mr-2 text-blue-500" />
+                          Upgrade Plan
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openQuickAction(user, 'addDays')}>
+                          <CalendarPlus className="w-4 h-4 mr-2 text-emerald-500" />
+                          Add Days
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openQuickAction(user, 'addLinks')}>
+                          <Link2 className="w-4 h-4 mr-2 text-purple-500" />
+                          Add Links
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {user.status === 'banned' ? (
+                          <DropdownMenuItem onClick={() => openQuickAction(user, 'unban')}>
+                            <ShieldCheck className="w-4 h-4 mr-2 text-emerald-500" />
+                            Unban User
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem onClick={() => openQuickAction(user, 'ban')} className="text-red-600">
+                            <Ban className="w-4 h-4 mr-2" />
+                            Ban User
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => setDeleteUser(user)} className="text-red-600">
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete User
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </TableCell>
               </TableRow>
@@ -286,6 +381,131 @@ export default function UserManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Quick Action Dialog */}
+      <Dialog open={!!quickActionType} onOpenChange={(open) => !open && setQuickActionType(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {quickActionType === 'upgrade' && '⬆️ Upgrade Plan'}
+              {quickActionType === 'addDays' && '📅 Add Subscription Days'}
+              {quickActionType === 'addLinks' && '🔗 Add Daily Links'}
+              {quickActionType === 'ban' && '🚫 Ban User'}
+              {quickActionType === 'unban' && '✅ Unban User'}
+            </DialogTitle>
+            <DialogDescription>
+              {quickActionUser && `User: ${quickActionUser.username} (${quickActionUser.email})`}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            {quickActionType === 'upgrade' && (
+              <div className="space-y-3">
+                <Label>Select New Plan</Label>
+                <Select value={quickActionValue} onValueChange={setQuickActionValue}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select plan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="free">Free</SelectItem>
+                    <SelectItem value="daily">Daily ($100 - 1 link/day)</SelectItem>
+                    <SelectItem value="weekly">Weekly ($300 - 2 links/day)</SelectItem>
+                    <SelectItem value="monthly">Monthly ($900 - 2 links/day)</SelectItem>
+                    <SelectItem value="unlimited_weekly">Unlimited Weekly ($600 - 4 links/day, ∞ requests)</SelectItem>
+                    <SelectItem value="unlimited_monthly">Unlimited Monthly ($2000 - 4 links/day, ∞ requests)</SelectItem>
+                    <SelectItem value="unlimited">Unlimited (Legacy)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-slate-500">
+                  Current plan: <Badge variant="outline">{quickActionUser?.access_type}</Badge>
+                </p>
+              </div>
+            )}
+            
+            {quickActionType === 'addDays' && (
+              <div className="space-y-3">
+                <Label>Days to Add</Label>
+                <Input
+                  type="number"
+                  placeholder="Enter number of days"
+                  value={quickActionValue}
+                  onChange={(e) => setQuickActionValue(e.target.value)}
+                  min="1"
+                />
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setQuickActionValue('7')}>+7 days</Button>
+                  <Button size="sm" variant="outline" onClick={() => setQuickActionValue('30')}>+30 days</Button>
+                  <Button size="sm" variant="outline" onClick={() => setQuickActionValue('90')}>+90 days</Button>
+                </div>
+                <p className="text-sm text-slate-500">
+                  Current expiry: {quickActionUser?.subscription_expiry 
+                    ? format(new Date(quickActionUser.subscription_expiry), 'MMM d, yyyy')
+                    : 'Not set'}
+                </p>
+              </div>
+            )}
+            
+            {quickActionType === 'addLinks' && (
+              <div className="space-y-3">
+                <Label>Additional Daily Links</Label>
+                <Input
+                  type="number"
+                  placeholder="Enter number of links to add"
+                  value={quickActionValue}
+                  onChange={(e) => setQuickActionValue(e.target.value)}
+                  min="1"
+                />
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setQuickActionValue('1')}>+1</Button>
+                  <Button size="sm" variant="outline" onClick={() => setQuickActionValue('2')}>+2</Button>
+                  <Button size="sm" variant="outline" onClick={() => setQuickActionValue('5')}>+5</Button>
+                  <Button size="sm" variant="outline" onClick={() => setQuickActionValue('10')}>+10</Button>
+                </div>
+                <p className="text-sm text-slate-500">
+                  Current limit: {quickActionUser?.daily_link_limit || 0} links/day
+                </p>
+              </div>
+            )}
+            
+            {quickActionType === 'ban' && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-700 font-medium">⚠️ Are you sure you want to ban this user?</p>
+                <p className="text-sm text-red-600 mt-2">
+                  The user will not be able to access their account or use redirects until unbanned.
+                </p>
+              </div>
+            )}
+            
+            {quickActionType === 'unban' && (
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+                <p className="text-emerald-700 font-medium">✅ Unban this user?</p>
+                <p className="text-sm text-emerald-600 mt-2">
+                  The user will regain access to their account.
+                </p>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQuickActionType(null)}>Cancel</Button>
+            <Button 
+              onClick={handleQuickAction}
+              className={quickActionType === 'ban' ? 'bg-red-600 hover:bg-red-700' : ''}
+              disabled={
+                (quickActionType === 'upgrade' && !quickActionValue) ||
+                (quickActionType === 'addDays' && !quickActionValue) ||
+                (quickActionType === 'addLinks' && !quickActionValue)
+              }
+            >
+              {quickActionType === 'upgrade' && 'Upgrade Plan'}
+              {quickActionType === 'addDays' && 'Add Days'}
+              {quickActionType === 'addLinks' && 'Add Links'}
+              {quickActionType === 'ban' && 'Ban User'}
+              {quickActionType === 'unban' && 'Unban User'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -377,6 +597,7 @@ function UserForm({ user, onSave }) {
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="paused">Paused</SelectItem>
               <SelectItem value="expired">Expired</SelectItem>
+              <SelectItem value="banned">Banned</SelectItem>
             </SelectContent>
           </Select>
         </div>
