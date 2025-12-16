@@ -915,7 +915,24 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
     const { password: _, ...userWithoutPassword } = user;
     
     const apiUser = await db.apiUsers.findByEmail(req.user.email);
-    res.json({ ...userWithoutPassword, apiUser });
+    
+    // Calculate current counter status with date validation
+    const today = new Date().toISOString().split('T')[0];
+    const linksCreatedToday = apiUser.links_created_date === today ? (apiUser.links_created_today || 0) : 0;
+    const dailyLimit = parseInt(apiUser.daily_link_limit) || 1;
+    
+    res.json({ 
+      ...userWithoutPassword, 
+      apiUser: {
+        ...apiUser,
+        linkCounter: {
+          linksCreatedToday,
+          dailyLinkLimit: dailyLimit,
+          remainingLinks: dailyLimit - linksCreatedToday,
+          date: today
+        }
+      }
+    });
   } catch (error) {
     console.error('Get current user error:', error);
     res.status(500).json({ error: 'Failed to retrieve user information' });
@@ -1189,7 +1206,16 @@ app.post('/api/redirects', authMiddleware, requireActiveSubscription, async (req
     created_date: new Date().toISOString()
   };
   const created = await db.redirects.create(redirect);
-  res.status(201).json(created);
+  
+  // Include updated counter information in response so frontend can update display
+  res.status(201).json({
+    ...created,
+    linkCounter: {
+      linksCreatedToday: counterResult.count,
+      dailyLinkLimit: dailyLimit,
+      remainingLinks: dailyLimit - counterResult.count
+    }
+  });
 });
 
 app.get('/api/redirects/:id', authMiddleware, requireActiveSubscription, async (req, res) => {
@@ -1914,6 +1940,35 @@ app.delete('/api/user-agent-patterns/:id', authMiddleware, adminMiddleware, (req
   if (!db.userAgentPatterns.has(req.params.id)) return res.status(404).json({ error: 'Not found' });
   db.userAgentPatterns.delete(req.params.id);
   res.status(204).send();
+});
+
+// ==========================================
+// LINK COUNTER STATUS
+// ==========================================
+
+// Public endpoint for getting current link counter status
+app.get('/api/user/link-counter', authMiddleware, async (req, res) => {
+  try {
+    const apiUser = await db.apiUsers.findByEmail(req.user.email);
+    if (!apiUser) {
+      return res.status(404).json({ error: 'API user not found' });
+    }
+    
+    const today = new Date().toISOString().split('T')[0];
+    const linksCreatedToday = apiUser.links_created_date === today ? (apiUser.links_created_today || 0) : 0;
+    const dailyLimit = parseInt(apiUser.daily_link_limit) || 1;
+    
+    res.json({
+      linksCreatedToday,
+      dailyLinkLimit: dailyLimit,
+      remainingLinks: dailyLimit - linksCreatedToday,
+      date: today,
+      canCreateMore: linksCreatedToday < dailyLimit
+    });
+  } catch (error) {
+    console.error('Get link counter error:', error);
+    res.status(500).json({ error: 'Failed to retrieve link counter' });
+  }
 });
 
 // ==========================================
