@@ -155,7 +155,7 @@ const BATCH_INTERVAL = 2000; // Flush every 2 seconds
 
 // Start batch flush timer - called after server is ready
 let batchTimerStarted = false;
-function startBatchFlushTimer() {
+export function startBatchFlushTimer() {
   if (batchTimerStarted || batchFlushTimer) return;
   batchTimerStarted = true;
   batchFlushTimer = setInterval(flushAllQueues, BATCH_INTERVAL);
@@ -270,8 +270,6 @@ async function flushEmailCaptures() {
   }
 }
 
-// Export function to start batch timer (call after server is ready)
-export { startBatchFlushTimer };
 
 // Get redirect from cache or DB
 export async function getCachedRedirect(publicId) {
