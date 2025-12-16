@@ -284,21 +284,31 @@ export const apiUsers = {
       
       const apiUser = result.rows[0];
       const today = new Date().toISOString().split('T')[0];
+      
+      // Convert database timestamp to date string for comparison
+      const storedDate = apiUser.links_created_date 
+        ? new Date(apiUser.links_created_date).toISOString().split('T')[0]
+        : null;
+      
       console.log('[ATOMIC-COUNTER] Current state:', {
         user: apiUser.email,
         links_created_today: apiUser.links_created_today,
-        links_created_date: apiUser.links_created_date,
-        today: today
+        links_created_date_raw: apiUser.links_created_date,
+        links_created_date_normalized: storedDate,
+        today: today,
+        dates_match: storedDate === today
       });
       
       // Reset counter if new day
       let linksCreatedToday = parseInt(apiUser.links_created_today) || 0;
       let linksCreatedDate = apiUser.links_created_date;
       
-      if (linksCreatedDate !== today) {
-        console.log('[ATOMIC-COUNTER] New day detected, resetting counter');
+      if (storedDate !== today) {
+        console.log('[ATOMIC-COUNTER] New day detected, resetting counter from', linksCreatedToday, 'to 0');
         linksCreatedToday = 0;
         linksCreatedDate = today;
+      } else {
+        console.log('[ATOMIC-COUNTER] Same day, keeping current count:', linksCreatedToday);
       }
       
       // Check if limit reached

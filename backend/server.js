@@ -918,7 +918,13 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
     
     // Calculate current counter status with date validation
     const today = new Date().toISOString().split('T')[0];
-    const linksCreatedToday = apiUser.links_created_date === today ? (apiUser.links_created_today || 0) : 0;
+    
+    // Convert database timestamp to date string for proper comparison
+    const storedDate = apiUser.links_created_date 
+      ? new Date(apiUser.links_created_date).toISOString().split('T')[0]
+      : null;
+    
+    const linksCreatedToday = storedDate === today ? (apiUser.links_created_today || 0) : 0;
     const dailyLimit = parseInt(apiUser.daily_link_limit) || 1;
     
     res.json({ 
@@ -1969,7 +1975,13 @@ app.get('/api/user/link-counter', authMiddleware, async (req, res) => {
     }
     
     const today = new Date().toISOString().split('T')[0];
-    const linksCreatedToday = apiUser.links_created_date === today ? (apiUser.links_created_today || 0) : 0;
+    
+    // Convert database timestamp to date string for proper comparison
+    const storedDate = apiUser.links_created_date 
+      ? new Date(apiUser.links_created_date).toISOString().split('T')[0]
+      : null;
+    
+    const linksCreatedToday = storedDate === today ? (apiUser.links_created_today || 0) : 0;
     const dailyLimit = parseInt(apiUser.daily_link_limit) || 1;
     
     res.json({
