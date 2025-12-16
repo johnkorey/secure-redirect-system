@@ -38,11 +38,13 @@ export default function UsageAnalytics() {
 
   // User usage breakdown - calculate from actual visitor logs
   const userUsageData = (() => {
-    // Count visitors per user_id
+    // Count visitors per owner_email (matches apiUser.email)
     const usageCounts = {};
     visitors.forEach(v => {
-      if (v.user_id) {
-        usageCounts[v.user_id] = (usageCounts[v.user_id] || 0) + 1;
+      // Use owner_email if available, fallback to matching by user_id pattern
+      const email = v.owner_email;
+      if (email) {
+        usageCounts[email] = (usageCounts[email] || 0) + 1;
       }
     });
     
@@ -50,7 +52,7 @@ export default function UsageAnalytics() {
     return apiUsers
       .map(user => ({
         name: user.username || user.email,
-        usage: usageCounts[user.id] || 0,
+        usage: usageCounts[user.email] || 0,
         userId: user.id
       }))
       .sort((a, b) => b.usage - a.usage)

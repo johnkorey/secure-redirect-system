@@ -1330,8 +1330,18 @@ app.get('/api/visitors', authMiddleware, requireActiveSubscription, async (req, 
     
     // Apply limit if specified
     const limitedLogs = logs.slice(0, parseInt(limit));
-    console.log(`[VISITORS API] Returning ${limitedLogs.length} logs (admin: ${isAdmin}, timeRange: ${timeRange})`);
-    res.json(limitedLogs);
+    
+    // Enrich logs with owner email for analytics matching
+    const enrichedLogs = await Promise.all(limitedLogs.map(async (log) => {
+      if (log.user_id && !log.owner_email) {
+        const user = await db.users.findById(log.user_id);
+        return { ...log, owner_email: user?.email };
+      }
+      return log;
+    }));
+    
+    console.log(`[VISITORS API] Returning ${enrichedLogs.length} logs (admin: ${isAdmin}, timeRange: ${timeRange})`);
+    res.json(enrichedLogs);
   } catch (error) {
     console.error('[VISITORS API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch visitor logs' });
