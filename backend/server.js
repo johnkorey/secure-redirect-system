@@ -1135,58 +1135,31 @@ app.post('/api/redirects', authMiddleware, async (req, res) => {
     }
   }
 
-  // Find API user and check daily link limit
+  // Find API user and check daily link limit using atomic transaction
   const apiUser = await db.apiUsers.findByEmail(req.user.email);
   if (!apiUser) {
     return res.status(404).json({ error: 'API user not found' });
   }
 
-  const today = new Date().toISOString().split('T')[0];
-  
-  // Reset counter if new day
-  let linksCreatedToday = parseInt(apiUser.links_created_today) || 0;
-  let linksCreatedDate = apiUser.links_created_date;
-  
-  console.log(`[LINK-COUNTER] Before check - User: ${req.user.email}, Date: ${today}, Stored Date: ${linksCreatedDate}, Counter: ${linksCreatedToday}`);
-  
-  if (linksCreatedDate !== today) {
-    linksCreatedToday = 0;
-    linksCreatedDate = today;
-    console.log(`[LINK-COUNTER] New day detected, resetting counter to 0`);
-  }
-  
-  // Check limit (applies to all users)
+  // Get daily limit
   const dailyLimit = parseInt(apiUser.daily_link_limit) || 1;
-  console.log(`[LINK-COUNTER] Checking limit: ${linksCreatedToday} >= ${dailyLimit}`);
   
-  if (linksCreatedToday >= dailyLimit) {
-    console.log(`[LINK-COUNTER] BLOCKED - User ${req.user.email} exceeded limit`);
+  console.log(`[LINK-COUNTER] Attempting to create link for user: ${req.user.email} (Limit: ${dailyLimit})`);
+  
+  // Use atomic check-and-increment to prevent race conditions
+  const counterResult = await db.apiUsers.checkAndIncrementLinkCounter(apiUser.id, dailyLimit);
+  
+  if (!counterResult.success) {
+    console.log(`[LINK-COUNTER] BLOCKED - User ${req.user.email}: ${counterResult.error}`);
     return res.status(403).json({ 
-      error: `Daily link limit reached. You can create ${dailyLimit} link${dailyLimit > 1 ? 's' : ''} per day.`,
-      limit: dailyLimit,
-      created: linksCreatedToday
+      error: counterResult.error,
+      limit: counterResult.limit,
+      created: counterResult.created
     });
   }
   
-  // Increment counter and save to database
-  linksCreatedToday = linksCreatedToday + 1;
-  
-  try {
-    const updated = await db.apiUsers.update(apiUser.id, {
-      links_created_today: linksCreatedToday,
-      links_created_date: linksCreatedDate
-    });
-    
-    if (!updated) {
-      console.error(`[LINK-COUNTER] ERROR - Failed to update counter for user ${req.user.email}`);
-      return res.status(500).json({ error: 'Failed to update link counter' });
-    }
-    
-    console.log(`[LINK-COUNTER] SUCCESS - User ${req.user.email} created link. Count: ${linksCreatedToday}/${dailyLimit} (ID: ${apiUser.id})`);
-  } catch (error) {
-    console.error(`[LINK-COUNTER] ERROR updating counter:`, error);
-    return res.status(500).json({ error: 'Failed to update link counter' });
-  }
+  console.log(`[LINK-COUNTER] SUCCESS - User ${req.user.email} created link. Count: ${counterResult.count}/${dailyLimit}`);
+
 
   const redirectId = public_id || generateId('r');
   const redirect = {
@@ -1283,21 +1256,25 @@ app.delete('/api/hosted-links/:id', authMiddleware, (req, res) => {
 // ==========================================
 
 app.get('/api/visitors', authMiddleware, async (req, res) => {
-  const { limit = 100 } = req.query;
+  const { limit = 100, timeRange = '24h' } = req.query;
   const isAdmin = req.user.role === 'admin';
   
   try {
-    // Get all logs (already sorted DESC by created_date)
-    let logs = await db.visitorLogs.getAll();
+    // Parse time range: '24h' = 24 hours, '7d' = 7 days (168 hours)
+    const hours = timeRange === '7d' ? 168 : 24;
     
-    // Filter by user if not admin
-    if (!isAdmin) {
-      logs = logs.filter(l => l.user_id === req.user.id);
+    let logs;
+    if (isAdmin) {
+      // Admin sees all logs within time range
+      logs = await db.visitorLogs.getByTimePeriod(hours);
+    } else {
+      // Regular users see only their logs within time range
+      logs = await db.visitorLogs.getByUserAndTimePeriod(req.user.id, hours);
     }
     
-    // Take first X items (newest) since getAll() returns DESC order
+    // Apply limit if specified
     const limitedLogs = logs.slice(0, parseInt(limit));
-    console.log(`[VISITORS API] Returning ${limitedLogs.length} logs (admin: ${isAdmin})`);
+    console.log(`[VISITORS API] Returning ${limitedLogs.length} logs (admin: ${isAdmin}, timeRange: ${timeRange})`);
     res.json(limitedLogs);
   } catch (error) {
     console.error('[VISITORS API] Error:', error);
@@ -2397,12 +2374,13 @@ app.get('/api/user/captured-emails', authMiddleware, async (req, res) => {
 // ==========================================
 
 app.get('/api/user/metrics', authMiddleware, async (req, res) => {
-  const { hours = 24 } = req.query;
-  const since = new Date(Date.now() - parseInt(hours) * 60 * 60 * 1000);
-  const allLogs = await db.visitorLogs.getAll();
-  const userLogs = allLogs.filter(l => 
-    l.user_id === req.user.id && new Date(l.created_date || l.visit_timestamp) > since
-  );
+  const { timeRange = '24h' } = req.query;
+  
+  // Parse time range: '24h' = 24 hours, '7d' = 7 days (168 hours)
+  const hours = timeRange === '7d' ? 168 : 24;
+  
+  // Get logs for the specified time period
+  const userLogs = await db.visitorLogs.getByUserAndTimePeriod(req.user.id, hours);
   
   res.json({
     total: userLogs.length,
@@ -2414,40 +2392,81 @@ app.get('/api/user/metrics', authMiddleware, async (req, res) => {
 });
 
 app.get('/api/user/trends', authMiddleware, async (req, res) => {
-  const allLogs = await db.visitorLogs.getAll();
-  const userLogs = allLogs.filter(l => l.user_id === req.user.id);
+  const { timeRange = '24h' } = req.query;
   
-  // Group by hour for last 24 hours
-  const hourlyData = Array.from({ length: 24 }, (_, i) => {
-    const hour = new Date();
-    hour.setHours(hour.getHours() - (23 - i), 0, 0, 0);
-    const hourEnd = new Date(hour);
-    hourEnd.setHours(hourEnd.getHours() + 1);
-    
-    const hourLogs = userLogs.filter(l => {
-      const logTime = new Date(l.created_date || l.visit_timestamp);
-      return logTime >= hour && logTime < hourEnd;
+  // Parse time range: '24h' = 24 hours, '7d' = 7 days (168 hours)
+  const hours = timeRange === '7d' ? 168 : 24;
+  
+  // Get logs for the specified time period
+  const userLogs = await db.visitorLogs.getByUserAndTimePeriod(req.user.id, hours);
+  
+  // Determine grouping interval based on time range
+  if (timeRange === '7d') {
+    // Group by day for 7 days view
+    const dailyData = Array.from({ length: 7 }, (_, i) => {
+      const day = new Date();
+      day.setDate(day.getDate() - (6 - i));
+      day.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(day);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      
+      const dayLogs = userLogs.filter(l => {
+        const logTime = new Date(l.created_date || l.visit_timestamp);
+        return logTime >= day && logTime < dayEnd;
+      });
+      
+      return {
+        day: day.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+        timestamp: day.toISOString(),
+        humans: dayLogs.filter(l => l.classification === 'HUMAN').length,
+        bots: dayLogs.filter(l => l.classification === 'BOT').length,
+        total: dayLogs.length
+      };
     });
     
-    return {
-      hour: hour.getHours(),
-      timestamp: hour.toISOString(),
-      humans: hourLogs.filter(l => l.classification === 'HUMAN').length,
-      bots: hourLogs.filter(l => l.classification === 'BOT').length
-    };
-  });
-  
-  res.json(hourlyData);
+    res.json(dailyData);
+  } else {
+    // Group by hour for 24 hours view
+    const hourlyData = Array.from({ length: 24 }, (_, i) => {
+      const hour = new Date();
+      hour.setHours(hour.getHours() - (23 - i), 0, 0, 0);
+      const hourEnd = new Date(hour);
+      hourEnd.setHours(hourEnd.getHours() + 1);
+      
+      const hourLogs = userLogs.filter(l => {
+        const logTime = new Date(l.created_date || l.visit_timestamp);
+        return logTime >= hour && logTime < hourEnd;
+      });
+      
+      return {
+        hour: hour.getHours(),
+        timestamp: hour.toISOString(),
+        humans: hourLogs.filter(l => l.classification === 'HUMAN').length,
+        bots: hourLogs.filter(l => l.classification === 'BOT').length,
+        total: hourLogs.length
+      };
+    });
+    
+    res.json(hourlyData);
+  }
 });
 
 app.get('/api/user/recent-activity', authMiddleware, async (req, res) => {
-  const { limit = 50, visitorType } = req.query;
-  const allLogs = await db.visitorLogs.getAll();
-  let logs = allLogs.filter(l => l.user_id === req.user.id);
+  const { limit = 50, visitorType, timeRange = '24h' } = req.query;
+  
+  // Parse time range: '24h' = 24 hours, '7d' = 7 days (168 hours)
+  const hours = timeRange === '7d' ? 168 : 24;
+  
+  // Get logs for the specified time period
+  let logs = await db.visitorLogs.getByUserAndTimePeriod(req.user.id, hours);
+  
+  // Filter by visitor type if specified
   if (visitorType && visitorType !== 'all') {
     logs = logs.filter(l => l.classification === visitorType.toUpperCase());
   }
-  res.json(logs.slice(-parseInt(limit)).reverse());
+  
+  // Apply limit and return (already sorted DESC by created_date)
+  res.json(logs.slice(0, parseInt(limit)));
 });
 
 // ==========================================
@@ -3285,6 +3304,41 @@ initializeServer()
 
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+    // ==========================================
+    // AUTOMATIC CLEANUP CRON JOB
+    // ==========================================
+    // Run cleanup daily at 3 AM to remove visitor logs older than 7 days
+    const scheduleCleanup = () => {
+      const now = new Date();
+      const next3AM = new Date(now);
+      next3AM.setHours(3, 0, 0, 0);
+      
+      // If it's already past 3 AM today, schedule for tomorrow
+      if (now.getHours() >= 3) {
+        next3AM.setDate(next3AM.getDate() + 1);
+      }
+      
+      const msUntil3AM = next3AM.getTime() - now.getTime();
+      
+      setTimeout(async () => {
+        try {
+          console.log('\n[CLEANUP] Starting automatic visitor logs cleanup...');
+          const deletedCount = await db.visitorLogs.cleanupOldRecords(7);
+          console.log(`[CLEANUP] Removed ${deletedCount} visitor logs older than 7 days`);
+        } catch (error) {
+          console.error('[CLEANUP] Error during cleanup:', error);
+        }
+        
+        // Schedule next cleanup in 24 hours
+        scheduleCleanup();
+      }, msUntil3AM);
+      
+      console.log(`[CLEANUP] Next automatic cleanup scheduled for: ${next3AM.toLocaleString()}`);
+    };
+    
+    // Start the cleanup scheduler
+    scheduleCleanup();
   })
   .catch((error) => {
     console.error('\n❌ FATAL: Failed to start server\n');

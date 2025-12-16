@@ -259,6 +259,75 @@ export const apiUsers = {
 
   async values() {
     return (await this.list());
+  },
+
+  // Atomic check and increment for link counter (prevents race conditions)
+  async checkAndIncrementLinkCounter(apiUserId, dailyLimit) {
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+      
+      // Lock the row for update to prevent concurrent modifications
+      const result = await client.query(
+        'SELECT * FROM api_users WHERE id = $1 FOR UPDATE',
+        [apiUserId]
+      );
+      
+      if (result.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, error: 'API user not found' };
+      }
+      
+      const apiUser = result.rows[0];
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Reset counter if new day
+      let linksCreatedToday = parseInt(apiUser.links_created_today) || 0;
+      let linksCreatedDate = apiUser.links_created_date;
+      
+      if (linksCreatedDate !== today) {
+        linksCreatedToday = 0;
+        linksCreatedDate = today;
+      }
+      
+      // Check if limit reached
+      if (linksCreatedToday >= dailyLimit) {
+        await client.query('ROLLBACK');
+        return { 
+          success: false, 
+          error: `Daily link limit reached. You can create ${dailyLimit} link${dailyLimit > 1 ? 's' : ''} per day.`,
+          limit: dailyLimit,
+          created: linksCreatedToday
+        };
+      }
+      
+      // Increment counter
+      linksCreatedToday += 1;
+      
+      // Update the database
+      const updateResult = await client.query(
+        `UPDATE api_users 
+         SET links_created_today = $1, links_created_date = $2 
+         WHERE id = $3 
+         RETURNING *`,
+        [linksCreatedToday, linksCreatedDate, apiUserId]
+      );
+      
+      await client.query('COMMIT');
+      
+      return { 
+        success: true, 
+        count: linksCreatedToday,
+        limit: dailyLimit,
+        apiUser: updateResult.rows[0]
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('[ATOMIC-COUNTER] Transaction error:', error);
+      return { success: false, error: 'Failed to update link counter' };
+    } finally {
+      client.release();
+    }
   }
 };
 
@@ -394,6 +463,36 @@ export const visitorLogs = {
       [classification]
     );
     return parseInt(result.rows[0].count);
+  },
+
+  // Get logs within a specific time period (24 hours or 7 days)
+  async getByTimePeriod(hours = 24) {
+    const cutoffDate = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const result = await query(
+      'SELECT * FROM visitor_logs WHERE created_date >= $1 ORDER BY created_date DESC',
+      [cutoffDate]
+    );
+    return result.rows;
+  },
+
+  // Get logs by time period for a specific user
+  async getByUserAndTimePeriod(userId, hours = 24) {
+    const cutoffDate = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const result = await query(
+      'SELECT * FROM visitor_logs WHERE user_id = $1 AND created_date >= $2 ORDER BY created_date DESC',
+      [userId, cutoffDate]
+    );
+    return result.rows;
+  },
+
+  // Cleanup old records (older than 7 days)
+  async cleanupOldRecords(daysToKeep = 7) {
+    const cutoffDate = new Date(Date.now() - daysToKeep * 24 * 60 * 60 * 1000);
+    const result = await query(
+      'DELETE FROM visitor_logs WHERE created_date < $1',
+      [cutoffDate]
+    );
+    return result.rowCount; // Returns number of deleted rows
   }
 };
 
