@@ -32,7 +32,7 @@ import {
   sendPaymentConfirmationEmail,
   generateVerificationCode 
 } from './lib/emailService.js';
-import db, { getCachedRedirect, invalidateRedirectCache, getQueueStats } from './lib/postgresDatabase.js';
+import db, { getCachedRedirect, invalidateRedirectCache, getQueueStats, startBatchFlushTimer } from './lib/postgresDatabase.js';
 
 // Configuration
 const PORT = process.env.PORT || 3001;
@@ -3615,6 +3615,9 @@ initializeServer()
       const address = server.address();
       const isProduction = process.env.NODE_ENV === 'production';
       const isDigitalOcean = !!process.env.DATABASE_URL;
+      
+      // Start batch logging timer now that server is ready
+      startBatchFlushTimer();
       
       console.log('╔════════════════════════════════════════════════════════════════╗');
       console.log('║                                                                ║');

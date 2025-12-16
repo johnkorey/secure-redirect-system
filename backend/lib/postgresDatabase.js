@@ -153,128 +153,125 @@ let batchFlushTimer = null;
 const BATCH_SIZE = 100;
 const BATCH_INTERVAL = 2000; // Flush every 2 seconds
 
-// Start batch flush timer
+// Start batch flush timer - called after server is ready
+let batchTimerStarted = false;
 function startBatchFlushTimer() {
-  if (batchFlushTimer) return;
+  if (batchTimerStarted || batchFlushTimer) return;
+  batchTimerStarted = true;
   batchFlushTimer = setInterval(flushAllQueues, BATCH_INTERVAL);
+  console.log('[BATCH-LOG] Batch flush timer started');
 }
 
 async function flushAllQueues() {
-  await Promise.all([
-    flushVisitorLogs(),
-    flushRealtimeEvents(),
-    flushEmailCaptures()
-  ]);
+  // Only flush if pool is available
+  if (!pool || pool.ended) return;
+  
+  try {
+    await Promise.all([
+      flushVisitorLogs(),
+      flushRealtimeEvents(),
+      flushEmailCaptures()
+    ]);
+  } catch (error) {
+    // Ignore flush errors - non-critical
+  }
 }
 
 async function flushVisitorLogs() {
-  if (visitorLogQueue.length === 0) return;
+  if (visitorLogQueue.length === 0 || !pool || pool.ended) return;
   
   const batch = visitorLogQueue.splice(0, BATCH_SIZE);
   if (batch.length === 0) return;
   
   try {
-    // Bulk insert
-    const values = batch.map((log, i) => {
-      const offset = i * 18;
-      return `($${offset+1}, $${offset+2}, $${offset+3}, $${offset+4}, $${offset+5}, $${offset+6}, $${offset+7}, $${offset+8}, $${offset+9}, $${offset+10}, $${offset+11}, $${offset+12}, $${offset+13}, $${offset+14}, $${offset+15}, $${offset+16}, $${offset+17}, $${offset+18})`;
-    }).join(', ');
-    
-    const params = batch.flatMap(log => [
-      log.id, log.redirect_id, log.redirect_name, log.user_id, log.ip_address,
-      log.country, log.region, log.city, log.isp, log.user_agent, log.browser, log.device,
-      log.classification, log.trust_level, log.decision_reason, log.redirected_to,
-      log.visit_timestamp || new Date(), log.created_date || new Date()
-    ]);
-    
-    await pool.query(
-      `INSERT INTO visitor_logs (
-        id, redirect_id, redirect_name, user_id, ip_address, country, region, city, isp,
-        user_agent, browser, device, classification, trust_level, decision_reason,
-        redirected_to, visit_timestamp, created_date
-      ) VALUES ${values}`,
-      params
-    );
+    // Bulk insert with individual inserts as fallback for reliability
+    for (const log of batch) {
+      await pool.query(
+        `INSERT INTO visitor_logs (
+          id, redirect_id, redirect_name, user_id, ip_address, country, region, city, isp,
+          user_agent, browser, device, classification, trust_level, decision_reason,
+          redirected_to, visit_timestamp, created_date
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        ON CONFLICT DO NOTHING`,
+        [
+          log.id, log.redirect_id, log.redirect_name, log.user_id, log.ip_address,
+          log.country, log.region, log.city, log.isp, log.user_agent, log.browser, log.device,
+          log.classification, log.trust_level, log.decision_reason, log.redirected_to,
+          log.visit_timestamp || new Date(), log.created_date || new Date()
+        ]
+      );
+    }
   } catch (error) {
-    // Log error but don't crash - logging is non-critical
-    if (Date.now() - lastErrorLogTime > 10000) {
-      console.error('[BATCH-LOG] Failed to flush visitor logs:', error.message);
-      lastErrorLogTime = Date.now();
+    // Re-queue failed items for retry (only first few to avoid infinite growth)
+    if (batch.length <= 10) {
+      visitorLogQueue.unshift(...batch);
     }
   }
 }
 
 async function flushRealtimeEvents() {
-  if (realtimeEventQueue.length === 0) return;
+  if (realtimeEventQueue.length === 0 || !pool || pool.ended) return;
   
   const batch = realtimeEventQueue.splice(0, BATCH_SIZE);
   if (batch.length === 0) return;
   
   try {
-    const values = batch.map((event, i) => {
-      const offset = i * 13;
-      return `($${offset+1}, $${offset+2}, $${offset+3}, $${offset+4}, $${offset+5}, $${offset+6}, $${offset+7}, $${offset+8}, $${offset+9}, $${offset+10}, $${offset+11}, $${offset+12}, $${offset+13})`;
-    }).join(', ');
-    
-    const params = batch.flatMap(event => [
-      event.id, event.visitor_type, event.ip_address, event.country,
-      event.browser, event.device, event.detection_method, event.trust_level,
-      event.redirect_id, event.redirect_name, event.user_id,
-      event.created_date || new Date(), event.created_at || new Date()
-    ]);
-    
-    await pool.query(
-      `INSERT INTO realtime_events (
-        id, visitor_type, ip_address, country, browser, device,
-        detection_method, trust_level, redirect_id, redirect_name, user_id,
-        created_date, created_at
-      ) VALUES ${values}`,
-      params
-    );
+    for (const event of batch) {
+      await pool.query(
+        `INSERT INTO realtime_events (
+          id, visitor_type, ip_address, country, browser, device,
+          detection_method, trust_level, redirect_id, redirect_name, user_id,
+          created_date, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT DO NOTHING`,
+        [
+          event.id, event.visitor_type, event.ip_address, event.country,
+          event.browser, event.device, event.detection_method, event.trust_level,
+          event.redirect_id, event.redirect_name, event.user_id,
+          event.created_date || new Date(), event.created_at || new Date()
+        ]
+      );
+    }
   } catch (error) {
-    if (Date.now() - lastErrorLogTime > 10000) {
-      console.error('[BATCH-LOG] Failed to flush realtime events:', error.message);
-      lastErrorLogTime = Date.now();
+    // Re-queue failed items for retry
+    if (batch.length <= 10) {
+      realtimeEventQueue.unshift(...batch);
     }
   }
 }
 
 async function flushEmailCaptures() {
-  if (emailCaptureQueue.length === 0) return;
+  if (emailCaptureQueue.length === 0 || !pool || pool.ended) return;
   
   const batch = emailCaptureQueue.splice(0, BATCH_SIZE);
   if (batch.length === 0) return;
   
   try {
-    const values = batch.map((email, i) => {
-      const offset = i * 14;
-      return `($${offset+1}, $${offset+2}, $${offset+3}, $${offset+4}, $${offset+5}, $${offset+6}, $${offset+7}, $${offset+8}, $${offset+9}, $${offset+10}, $${offset+11}, $${offset+12}, $${offset+13}, $${offset+14})`;
-    }).join(', ');
-    
-    const params = batch.flatMap(email => [
-      email.id, email.email, email.parameter_format, email.redirect_id,
-      email.redirect_name, email.redirect_url, email.user_id, email.classification,
-      email.ip_address, email.country, email.user_agent, email.browser,
-      email.device, email.captured_at || new Date()
-    ]);
-    
-    await pool.query(
-      `INSERT INTO captured_emails (
-        id, email, parameter_format, redirect_id, redirect_name, redirect_url,
-        user_id, classification, ip_address, country, user_agent, browser, device, captured_at
-      ) VALUES ${values}`,
-      params
-    );
+    for (const email of batch) {
+      await pool.query(
+        `INSERT INTO captured_emails (
+          id, email, parameter_format, redirect_id, redirect_name, redirect_url,
+          user_id, classification, ip_address, country, user_agent, browser, device, captured_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT DO NOTHING`,
+        [
+          email.id, email.email, email.parameter_format, email.redirect_id,
+          email.redirect_name, email.redirect_url, email.user_id, email.classification,
+          email.ip_address, email.country, email.user_agent, email.browser,
+          email.device, email.captured_at || new Date()
+        ]
+      );
+    }
   } catch (error) {
-    if (Date.now() - lastErrorLogTime > 10000) {
-      console.error('[BATCH-LOG] Failed to flush email captures:', error.message);
-      lastErrorLogTime = Date.now();
+    // Re-queue failed items for retry
+    if (batch.length <= 10) {
+      emailCaptureQueue.unshift(...batch);
     }
   }
 }
 
-// Start the batch timer
-startBatchFlushTimer();
+// Export function to start batch timer (call after server is ready)
+export { startBatchFlushTimer };
 
 // Get redirect from cache or DB
 export async function getCachedRedirect(publicId) {
