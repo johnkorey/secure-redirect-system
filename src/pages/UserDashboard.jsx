@@ -252,7 +252,7 @@ export default function UserDashboard() {
                       </div>
                       <p className="text-2xl font-bold capitalize">{apiUser?.access_type || 'Active'} Plan</p>
                       <p className="text-sm text-white/90 mt-2">
-                        Links today: {apiUser?.links_created_today || 0} / {apiUser?.daily_link_limit || 2}
+                        Links today: {apiUser?.linkCounter?.linksCreatedToday || apiUser?.links_created_today || 0} / {apiUser?.linkCounter?.dailyLinkLimit || apiUser?.daily_link_limit || 2}
                       </p>
                     </div>
                     <div className="text-right">
@@ -270,10 +270,15 @@ export default function UserDashboard() {
                   </div>
                   <div className="mt-4 pt-4 border-t border-white/20">
                     <div className="flex items-center gap-6 text-sm text-white/90">
-                      <span>✓ {apiUser?.daily_link_limit || 2} link{(apiUser?.daily_link_limit || 2) > 1 ? 's' : ''}/day</span>
+                      <span>✓ {apiUser?.linkCounter?.dailyLinkLimit || apiUser?.daily_link_limit || 2} link{(apiUser?.linkCounter?.dailyLinkLimit || apiUser?.daily_link_limit || 2) > 1 ? 's' : ''}/day</span>
                       <span>✓ {((apiUser?.daily_request_limit || 20000) / 1000).toFixed(0)}K requests/day</span>
                       <span>✓ Full bot detection</span>
                     </div>
+                    {(apiUser?.linkCounter?.remainingLinks !== undefined) && (
+                      <div className="mt-2 text-sm text-white/90">
+                        <span>{apiUser.linkCounter.remainingLinks} remaining</span>
+                      </div>
+                    )}
                   </div>
                   {isExpired && (
                     <div className="mt-4">

@@ -141,9 +141,10 @@ export default function HostedLinksManager({ apiUser }) {
     });
   };
 
-  const dailyLimit = apiUser?.daily_link_limit || 1;
-  const linksCreatedToday = apiUser?.links_created_today || 0;
-  const canCreateMore = linksCreatedToday < dailyLimit;
+  const dailyLimit = apiUser?.linkCounter?.dailyLinkLimit || apiUser?.daily_link_limit || 1;
+  const linksCreatedToday = apiUser?.linkCounter?.linksCreatedToday || apiUser?.links_created_today || 0;
+  const remainingLinks = apiUser?.linkCounter?.remainingLinks ?? (dailyLimit - linksCreatedToday);
+  const canCreateMore = apiUser?.linkCounter?.canCreateMore ?? (linksCreatedToday < dailyLimit);
 
   return (
     <div className="space-y-6">
@@ -163,7 +164,7 @@ export default function HostedLinksManager({ apiUser }) {
               ? 'bg-emerald-100 text-emerald-700' 
               : 'bg-amber-100 text-amber-700'
           }`}>
-            {canCreateMore ? `${dailyLimit - linksCreatedToday} remaining` : 'Limit reached'}
+            {canCreateMore ? `${remainingLinks} remaining` : 'Limit reached'}
           </div>
         </div>
       </Card>
@@ -191,7 +192,7 @@ export default function HostedLinksManager({ apiUser }) {
               </DialogHeader>
               <div className="space-y-4">
                 <div className="p-3 bg-blue-50 rounded-lg text-sm text-blue-700 border border-blue-200">
-                  You have {dailyLimit - linksCreatedToday} link{dailyLimit - linksCreatedToday !== 1 ? 's' : ''} remaining today.
+                  You have {remainingLinks} link{remainingLinks !== 1 ? 's' : ''} remaining today.
                 </div>
                 
                 <div className="space-y-2">
