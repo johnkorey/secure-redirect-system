@@ -5,6 +5,7 @@ import { cacheGet, cacheSet } from '@/lib/cache';
 
 // Known crawler/bot user agents to block completely
 const CRAWLER_PATTERNS = [
+  // Search engine bots
   /googlebot/i,
   /bingbot/i,
   /slurp/i,          // Yahoo
@@ -13,10 +14,33 @@ const CRAWLER_PATTERNS = [
   /yandexbot/i,
   /sogou/i,
   /exabot/i,
-  /facebot/i,        // Facebook
   /ia_archiver/i,    // Alexa
   /msnbot/i,
   /teoma/i,
+  /petalbot/i,
+  
+  // Social media preview bots - IMPORTANT!
+  /whatsapp/i,       // WhatsApp link preview
+  /telegrambot/i,    // Telegram link preview
+  /telegram/i,       // Telegram variations
+  /facebot/i,        // Facebook
+  /facebookexternalhit/i,  // Facebook link preview
+  /facebookcatalog/i,
+  /twitterbot/i,     // Twitter/X
+  /linkedinbot/i,    // LinkedIn
+  /slackbot/i,       // Slack
+  /slack-imgproxy/i,
+  /discordbot/i,     // Discord
+  /pinterest/i,      // Pinterest
+  /skype/i,          // Skype
+  /viber/i,          // Viber
+  /instagram/i,      // Instagram
+  /snapchat/i,       // Snapchat
+  /kakaotalk/i,      // KakaoTalk
+  /line/i,           // LINE messenger
+  /vkshare/i,        // VK
+  
+  // SEO bots
   /semrushbot/i,
   /ahrefsbot/i,
   /mj12bot/i,
@@ -25,12 +49,18 @@ const CRAWLER_PATTERNS = [
   /serpstatbot/i,
   /screaming frog/i,
   /archive\.org_bot/i,
-  /petalbot/i,
+  
+  // Generic patterns
   /crawler/i,
   /spider/i,
   /scraper/i,
   /bot\.htm/i,
   /bot\.php/i,
+  /preview/i,        // Link preview services
+  /linkpreview/i,
+  /urlpreview/i,
+  
+  // Security scanners
   /netcraftsurvey/i,
   /censys/i,
   /shodan/i,

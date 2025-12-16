@@ -67,20 +67,50 @@ const GENERIC_BOT_SIGNATURES = [
   'apache-httpclient'
 ];
 
-// Social media preview bots
+// Social media preview bots - comprehensive patterns
 const SOCIAL_PREVIEW_BOTS = [
+  // Meta/Facebook family (includes WhatsApp)
   'facebookexternalhit',
-  'twitterbot',
-  'linkedinbot',
-  'slackbot',
+  'facebookcatalog',
+  'facebot',
+  'whatsapp',              // WhatsApp/2.x.x
+  'wa.me',                 // WhatsApp short links
+  // Telegram
   'telegrambot',
-  'whatsapp',
+  'telegram',              // Some Telegram crawlers
+  // Twitter/X
+  'twitterbot',
+  'twitter',
+  // LinkedIn
+  'linkedinbot',
+  'linkedin',
+  // Slack
+  'slackbot',
+  'slack-imgproxy',
+  'slack',
+  // Discord
   'discordbot',
+  'discord',
+  // Other social platforms
   'pinterest',
+  'pinterestbot',
   'skypeuripreview',
+  'skype',
+  'viber',
+  'line',                  // LINE messenger
+  'kakaotalk',             // KakaoTalk
+  'snapchat',
+  'instagram',
   'embedly',
   'quora link preview',
-  'redditbot'
+  'redditbot',
+  'vkshare',               // VK
+  'w3c_validator',
+  'baidushare',
+  'getlinkinfo',
+  'linkpreview',
+  'preview',               // Generic preview crawlers
+  'urlpreview'
 ];
 
 // Search engine bots
