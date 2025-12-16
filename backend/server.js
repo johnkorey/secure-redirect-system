@@ -2921,6 +2921,84 @@ app.get('/api/public/redirect/:publicId', async (req, res) => {
   }
 });
 
+// ==========================================
+// CLASSIFICATION API FOR INTEGRATION SCRIPTS
+// ==========================================
+
+// Classify Visitor (User API Key) - For PHP/JS/Python integration scripts
+app.post('/api/classify', async (req, res) => {
+  // Get API key from header or body
+  const apiKey = req.headers['x-api-key'] || req.body.api_key;
+  
+  if (!apiKey) {
+    return res.status(401).json({ error: 'API key required in X-API-Key header or api_key body field' });
+  }
+  
+  // Validate API key
+  const apiUser = await db.apiUsers.findByApiKey(apiKey);
+  if (!apiUser) {
+    return res.status(401).json({ error: 'Invalid API key' });
+  }
+  
+  // Check subscription
+  if (apiUser.status === 'banned') {
+    return res.status(403).json({ error: 'Account suspended' });
+  }
+  if (apiUser.status !== 'active') {
+    return res.status(403).json({ error: 'Subscription inactive' });
+  }
+  if (apiUser.subscription_expiry && new Date(apiUser.subscription_expiry) < new Date()) {
+    return res.status(403).json({ error: 'Subscription expired' });
+  }
+  
+  try {
+    // Get IP and user agent from request or body
+    const ip_address = req.body.ip_address || getClientIP(req);
+    const user_agent = req.body.user_agent || req.headers['user-agent'] || '';
+    const referer = req.body.referer || req.headers['referer'] || 'direct';
+    
+    console.log(`[API-CLASSIFY] User: ${apiUser.username}, IP: ${ip_address}, UA: ${user_agent.substring(0, 50)}...`);
+    
+    // Create a mock request object for the decision engine
+    const mockReq = {
+      headers: {
+        'user-agent': user_agent,
+        'x-forwarded-for': ip_address,
+        'referer': referer
+      },
+      get: (header) => {
+        if (header.toLowerCase() === 'user-agent') return user_agent;
+        if (header.toLowerCase() === 'referer') return referer;
+        return null;
+      },
+      socket: { remoteAddress: ip_address },
+      connection: { remoteAddress: ip_address }
+    };
+    
+    // Run classification
+    const ip2locationKey = await getIP2LocationApiKey();
+    const decision = await makeRedirectDecision({ req: mockReq, ip2locationApiKey: ip2locationKey });
+    
+    // Log the classification
+    console.log(`[API-CLASSIFY] Result: ${decision.classification}, Stage: ${decision.stage}, Reason: ${decision.reason}`);
+    
+    res.json({
+      classification: decision.classification,
+      confidence: decision.trustLevel === 'high' ? 1.0 : decision.trustLevel === 'medium' ? 0.7 : 0.3,
+      reason: decision.reason || 'Pattern analysis',
+      stage: decision.stage,
+      clientInfo: {
+        browser: decision.clientInfo.browser,
+        device: decision.clientInfo.device,
+        country: decision.clientInfo.country
+      }
+    });
+  } catch (error) {
+    console.error('[API-CLASSIFY] Error:', error);
+    res.status(500).json({ error: 'Classification failed' });
+  }
+});
+
 // Classify Visitor (Public - requires companion API key)
 app.post('/api/public/classify', async (req, res) => {
   // Validate companion API key
@@ -2977,10 +3055,23 @@ app.post('/api/public/classify', async (req, res) => {
       });
     }
     
-    const decision = await makeRedirectDecision(ip, userAgent);
+    // Create mock request object for decision engine
+    const mockReq = {
+      headers: {
+        'user-agent': userAgent,
+        'x-forwarded-for': ip
+      },
+      get: (header) => header.toLowerCase() === 'user-agent' ? userAgent : null,
+      socket: { remoteAddress: ip },
+      connection: { remoteAddress: ip }
+    };
+    
+    const ip2locationKey = await getIP2LocationApiKey();
+    const decision = await makeRedirectDecision({ req: mockReq, ip2locationApiKey: ip2locationKey });
+    
     res.json({
-      classification: decision.targetUrl === 'human' ? 'human' : 'bot',
-      confidence: decision.confidence || 1.0,
+      classification: decision.classification === 'HUMAN' ? 'human' : 'bot',
+      confidence: decision.trustLevel === 'high' ? 1.0 : 0.5,
       reason: decision.reason || 'Pattern analysis'
     });
   } catch (error) {
