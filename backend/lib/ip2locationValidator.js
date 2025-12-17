@@ -13,8 +13,8 @@
  * 
  * ### Proxy / Threat Rules
  * If ANY is true → BOT:
- * - is_proxy
- * - proxy_type == DCH
+ * - is_proxy (unless override applies)
+ * - proxy_type == DCH (Data Center Hosting)
  * - is_vpn
  * - is_data_center
  * - is_public_proxy
@@ -22,14 +22,13 @@
  * - is_web_crawler
  * - is_scanner
  * 
- * ### Special Override
- * If is_consumer_privacy_network == true:
- * - Treat as HUMAN
- * - Override all other proxy findings
+ * ### Special Overrides (HUMAN)
+ * 1. is_consumer_privacy_network == true → HUMAN
+ * 2. proxy_type == "RES" (Residential) → HUMAN
+ * 3. Residential proxy + ISP/MOB usage type → HUMAN (low trust)
  * 
- * ### Fraud Score
- * - NOT USED for classification (can cause false positives)
- * - Only stored in details for reference
+ * ### NOT Used for Classification
+ * - fraud_score: Can cause false positives, stored for reference only
  */
 
 const IP2LOCATION_API_BASE = 'https://api.ip2location.io';
@@ -184,6 +183,21 @@ export async function validateIP(ip, apiKey) {
     result.trustLevel = 'high';
     result.reason = 'CONSUMER_PRIVACY_NETWORK_OVERRIDE';
     console.log(`[IP2Location] Consumer Privacy Network detected - treating as HUMAN (override)`);
+    return result;
+  }
+
+  // === SPECIAL OVERRIDE: proxy_type == "RES" (Residential) ===
+  // Residential proxies are typically real users on home networks
+  // If proxy_type is RES, treat as HUMAN regardless of other signals
+  const proxyType = (ipData.proxy_type || '').toUpperCase();
+  if (proxyType === 'RES') {
+    result.isValid = true;
+    result.classification = 'HUMAN';
+    result.trustLevel = 'high';
+    result.reason = 'RESIDENTIAL_PROXY_TYPE_OVERRIDE';
+    result.details.isProxy = true;
+    result.details.proxyType = 'RES';
+    console.log(`[IP2Location] proxy_type=RES (Residential) detected - treating as HUMAN`);
     return result;
   }
 
