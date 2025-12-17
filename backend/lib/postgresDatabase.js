@@ -412,6 +412,16 @@ export async function getClient() {
   return await pool.connect();
 }
 
+// Get pool statistics for monitoring
+export function getPoolStats() {
+  return {
+    total: pool.totalCount,
+    idle: pool.idleCount,
+    waiting: pool.waitingCount,
+    max: POOL_SIZE
+  };
+}
+
 // ==========================================
 // USERS
 // ==========================================
@@ -767,11 +777,12 @@ export const visitorLogs = {
   },
 
   // Get logs within a specific time period (24 hours or 7 days)
-  async getByTimePeriod(hours = 24) {
+  // Limit added to prevent overwhelming the database for large datasets
+  async getByTimePeriod(hours = 24, limit = 10000) {
     const cutoffDate = new Date(Date.now() - hours * 60 * 60 * 1000);
     const result = await query(
-      'SELECT * FROM visitor_logs WHERE created_date >= $1 ORDER BY created_date DESC',
-      [cutoffDate]
+      'SELECT * FROM visitor_logs WHERE created_date >= $1 ORDER BY created_date DESC LIMIT $2',
+      [cutoffDate, limit]
     );
     return result.rows;
   },

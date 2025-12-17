@@ -32,7 +32,7 @@ import {
   sendPaymentConfirmationEmail,
   generateVerificationCode 
 } from './lib/emailService.js';
-import db, { getCachedRedirect, invalidateRedirectCache, getQueueStats, startBatchFlushTimer } from './lib/postgresDatabase.js';
+import db, { getCachedRedirect, invalidateRedirectCache, getQueueStats, startBatchFlushTimer, getPoolStats } from './lib/postgresDatabase.js';
 
 // Configuration
 const PORT = process.env.PORT || 3001;
@@ -1100,6 +1100,7 @@ app.get('/health', async (req, res) => {
     // Get queue stats for monitoring high-traffic scenarios
     const queueStats = getQueueStats();
     
+    const poolStats = getPoolStats();
     res.status(200).json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
@@ -1112,7 +1113,8 @@ app.get('/health', async (req, res) => {
         pendingRealtimeEvents: queueStats.realtimeEvents,
         pendingEmailCaptures: queueStats.emailCaptures
       },
-      version: 'v1.2.0-counter-fix', // Version marker to verify deployment
+      pool: poolStats,
+      version: 'v1.2.1-pool-fix', // Version marker to verify deployment
       features: {
         atomicCounter: true,
         subscriptionValidation: true,
@@ -1502,10 +1504,22 @@ app.get('/api/visitors', authMiddleware, requireActiveSubscription, async (req, 
       }
     }
     
+    // Check pool health before heavy queries
+    const poolStats = getPoolStats();
+    if (isAdmin && poolStats.waiting > 3) {
+      // Too many waiting connections - return cached data if available
+      const cacheKey = `visitors_${timeRange}`;
+      const cached = getAdminCache(cacheKey);
+      if (cached) {
+        console.log(`[VISITORS API] Pool busy (${poolStats.waiting} waiting), returning cached data`);
+        return res.json(cached);
+      }
+    }
+    
     let logs;
     if (isAdmin) {
-      // Admin sees all logs within time range
-      logs = await db.visitorLogs.getByTimePeriod(hours);
+      // Admin sees all logs within time range (limited to 10000 for performance)
+      logs = await db.visitorLogs.getByTimePeriod(hours, 10000);
     } else {
       // Regular users see only their logs within time range
       logs = await db.visitorLogs.getByUserAndTimePeriod(req.user.id, hours);
@@ -1545,8 +1559,21 @@ app.get('/api/visitors', authMiddleware, requireActiveSubscription, async (req, 
     console.log(`[VISITORS API] Returning ${enrichedLogs.length} logs (admin: ${isAdmin}, timeRange: ${timeRange})`);
     res.json(enrichedLogs);
   } catch (error) {
-    console.error('[VISITORS API] Error:', error);
-    res.status(500).json({ error: 'Failed to fetch visitor logs' });
+    console.error('[VISITORS API] Error:', error.message);
+    
+    // For admin, try to return cached data on error
+    if (isAdmin) {
+      const cacheKey = `visitors_${timeRange}`;
+      const cached = getAdminCache(cacheKey);
+      if (cached) {
+        console.log('[VISITORS API] Returning cached data due to DB error');
+        return res.json(cached);
+      }
+    }
+    
+    // Return empty array instead of error to prevent frontend crash
+    console.log('[VISITORS API] Returning empty array due to DB error');
+    res.json([]);
   }
 });
 
