@@ -23,8 +23,9 @@
  * 
  * ### Special Overrides (HUMAN)
  * 1. is_consumer_privacy_network == true → HUMAN
- * 2. proxy_type == "RES" (Residential) → HUMAN
- * 3. Residential proxy + ISP/MOB usage type → HUMAN (low trust)
+ * 2. ISP contains "iCloud Private Relay" → HUMAN (Apple's privacy feature)
+ * 3. proxy_type == "RES" (Residential) → HUMAN
+ * 4. Residential proxy + ISP/MOB usage type → HUMAN (low trust)
  * 
  * ### NOT Used for Classification (stored for reference only)
  * - is_proxy: Too many false positives with residential ISPs
@@ -181,6 +182,20 @@ export async function validateIP(ip, apiKey) {
     result.trustLevel = 'high';
     result.reason = 'CONSUMER_PRIVACY_NETWORK_OVERRIDE';
     console.log(`[IP2Location] Consumer Privacy Network detected - treating as HUMAN (override)`);
+    return result;
+  }
+
+  // === SPECIAL OVERRIDE: iCloud Private Relay ===
+  // Apple's iCloud Private Relay is a consumer privacy feature for real Safari users
+  // Always treat as HUMAN regardless of other signals (CDN, proxy, etc.)
+  const ispName = (ipData.isp || ipData.as || '').toLowerCase();
+  if (ispName.includes('icloud private relay') || ispName.includes('icloud-private-relay')) {
+    result.isValid = true;
+    result.classification = 'HUMAN';
+    result.trustLevel = 'high';
+    result.reason = 'ICLOUD_PRIVATE_RELAY_OVERRIDE';
+    result.details.isPrivacyNetwork = true;
+    console.log(`[IP2Location] iCloud Private Relay detected (ISP: ${ipData.isp}) - treating as HUMAN`);
     return result;
   }
 
