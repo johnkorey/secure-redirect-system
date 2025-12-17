@@ -20,9 +20,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let poolConfig;
 
-// Pool size - DigitalOcean Dev DB only allows ~20 connections total
-// CRITICAL: Keep pool VERY small to avoid exhausting connection slots
-const POOL_SIZE = parseInt(process.env.DB_POOL_SIZE || '3');
+// Pool size - DigitalOcean Dev DB allows ~20-25 connections total
+// Balance between availability and not exhausting slots
+const POOL_SIZE = parseInt(process.env.DB_POOL_SIZE || '5');
 
 if (process.env.DATABASE_URL) {
   // DigitalOcean App Platform / Heroku format
@@ -32,12 +32,12 @@ if (process.env.DATABASE_URL) {
     ssl: process.env.DB_SSL !== 'false' ? {
       rejectUnauthorized: false // Required for managed databases
     } : false,
-    max: POOL_SIZE,                    // Max connections - keep VERY low
-    min: 0,                            // Don't keep idle connections
-    idleTimeoutMillis: 10000,          // Release idle connections after 10s
-    connectionTimeoutMillis: 10000,    // Don't wait too long for connection
-    allowExitOnIdle: true,             // Allow pool to shrink to 0
-    statement_timeout: 15000,          // Kill slow queries after 15s
+    max: POOL_SIZE,                    // Max connections in pool
+    min: 1,                            // Keep 1 connection warm
+    idleTimeoutMillis: 30000,          // Release idle connections after 30s
+    connectionTimeoutMillis: 60000,    // Wait up to 60s for connection (was 10s)
+    allowExitOnIdle: false,            // Keep pool alive
+    statement_timeout: 30000,          // Kill slow queries after 30s
   };
 } else {
   // Individual environment variables (local development)
@@ -52,11 +52,11 @@ if (process.env.DATABASE_URL) {
       rejectUnauthorized: false
     } : false,
     max: POOL_SIZE,
-    min: 0,
-    idleTimeoutMillis: 10000,
-    connectionTimeoutMillis: 10000,
-    allowExitOnIdle: true,
-    statement_timeout: 15000,
+    min: 1,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 60000,
+    allowExitOnIdle: false,
+    statement_timeout: 30000,
   };
 }
 
@@ -76,15 +76,15 @@ pool.on('remove', () => {
 // Test initial connection with retries
 async function testConnection(retries = 5) {
   for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const client = await pool.connect();
-      const result = await client.query('SELECT NOW() as current_time, version() as version');
-      console.log('[PostgreSQL] ✓ Connection test successful');
-      console.log(`[PostgreSQL] Server time: ${result.rows[0].current_time}`);
-      console.log(`[PostgreSQL] Version: ${result.rows[0].version.split(' ').slice(0, 2).join(' ')}`);
-      client.release();
-      return true;
-    } catch (error) {
+  try {
+    const client = await pool.connect();
+    const result = await client.query('SELECT NOW() as current_time, version() as version');
+    console.log('[PostgreSQL] ✓ Connection test successful');
+    console.log(`[PostgreSQL] Server time: ${result.rows[0].current_time}`);
+    console.log(`[PostgreSQL] Version: ${result.rows[0].version.split(' ').slice(0, 2).join(' ')}`);
+    client.release();
+    return true;
+  } catch (error) {
       const isConnectionExhausted = error.code === '53300';
       console.error(`[PostgreSQL] ✗ Connection attempt ${attempt}/${retries} failed: ${error.message}`);
       
@@ -104,7 +104,7 @@ async function testConnection(retries = 5) {
       }
       
       console.error('[PostgreSQL] ✗ All connection attempts failed:', error.message);
-      throw error;
+    throw error;
     }
   }
 }

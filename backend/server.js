@@ -1449,8 +1449,30 @@ app.delete('/api/hosted-links/:id', authMiddleware, requireActiveSubscription, (
 });
 
 // ==========================================
-// VISITOR LOGS
+// VISITOR LOGS (with Admin Analytics Caching)
 // ==========================================
+
+// Admin analytics cache - reduces DB load for heavy dashboard queries
+const adminAnalyticsCache = {
+  visitors: { data: null, timestamp: 0, ttl: 30000 }, // 30 second cache
+  users: { data: null, timestamp: 0, ttl: 60000 },    // 60 second cache for users
+};
+
+function getAdminCache(key) {
+  const cache = adminAnalyticsCache[key];
+  if (cache && cache.data && (Date.now() - cache.timestamp) < cache.ttl) {
+    return cache.data;
+  }
+  return null;
+}
+
+function setAdminCache(key, data) {
+  adminAnalyticsCache[key] = {
+    data,
+    timestamp: Date.now(),
+    ttl: adminAnalyticsCache[key]?.ttl || 30000
+  };
+}
 
 app.get('/api/visitors', authMiddleware, requireActiveSubscription, async (req, res) => {
   const { timeRange = '7d' } = req.query;
@@ -1470,6 +1492,16 @@ app.get('/api/visitors', authMiddleware, requireActiveSubscription, async (req, 
     };
     const hours = getHoursFromTimeRange(timeRange);
     
+    // For admin, check cache first to reduce DB load
+    const cacheKey = `visitors_${timeRange}`;
+    if (isAdmin) {
+      const cached = getAdminCache(cacheKey);
+      if (cached) {
+        console.log(`[VISITORS API] Returning ${cached.length} logs from cache (admin: true, timeRange: ${timeRange})`);
+        return res.json(cached);
+      }
+    }
+    
     let logs;
     if (isAdmin) {
       // Admin sees all logs within time range
@@ -1479,14 +1511,36 @@ app.get('/api/visitors', authMiddleware, requireActiveSubscription, async (req, 
       logs = await db.visitorLogs.getByUserAndTimePeriod(req.user.id, hours);
     }
     
-    // Enrich logs with owner email for analytics matching (no limit - returns all data within time range)
-    const enrichedLogs = await Promise.all(logs.map(async (log) => {
-      if (log.user_id && !log.owner_email) {
-        const user = await db.users.findById(log.user_id);
-        return { ...log, owner_email: user?.email };
+    // Enrich logs with owner email - BATCH LOAD users to avoid N+1 queries
+    let enrichedLogs = logs;
+    if (isAdmin && logs.length > 0) {
+      // Get all unique user IDs that need lookup
+      const userIdsToLookup = [...new Set(logs.filter(l => l.user_id && !l.owner_email).map(l => l.user_id))];
+      
+      // Batch load all users at once (1 query instead of N)
+      const userMap = new Map();
+      if (userIdsToLookup.length > 0) {
+        // Try to get from cache first
+        let allUsers = getAdminCache('users');
+        if (!allUsers) {
+          allUsers = await db.users.getAll();
+          setAdminCache('users', allUsers);
+        }
+        allUsers.forEach(u => userMap.set(u.id, u));
       }
-      return log;
-    }));
+      
+      // Enrich in memory (no DB calls)
+      enrichedLogs = logs.map(log => {
+        if (log.user_id && !log.owner_email) {
+          const user = userMap.get(log.user_id);
+          return { ...log, owner_email: user?.email };
+        }
+        return log;
+      });
+      
+      // Cache the result for admin
+      setAdminCache(cacheKey, enrichedLogs);
+    }
     
     console.log(`[VISITORS API] Returning ${enrichedLogs.length} logs (admin: ${isAdmin}, timeRange: ${timeRange})`);
     res.json(enrichedLogs);
