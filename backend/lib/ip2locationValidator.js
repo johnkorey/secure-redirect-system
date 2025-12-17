@@ -13,7 +13,6 @@
  * 
  * ### Proxy / Threat Rules
  * If ANY is true → BOT:
- * - is_proxy (unless override applies)
  * - proxy_type == DCH (Data Center Hosting)
  * - is_vpn
  * - is_data_center
@@ -27,8 +26,9 @@
  * 2. proxy_type == "RES" (Residential) → HUMAN
  * 3. Residential proxy + ISP/MOB usage type → HUMAN (low trust)
  * 
- * ### NOT Used for Classification
- * - fraud_score: Can cause false positives, stored for reference only
+ * ### NOT Used for Classification (stored for reference only)
+ * - is_proxy: Too many false positives with residential ISPs
+ * - fraud_score: Can cause false positives
  */
 
 const IP2LOCATION_API_BASE = 'https://api.ip2location.io';
@@ -83,12 +83,10 @@ async function fetchIP2LocationData(ip, apiKey) {
 function checkProxySignals(ipData) {
   const signals = [];
   
-  // Check all proxy/threat indicators
-  if (ipData.is_proxy === true) {
-    signals.push('is_proxy');
-  }
+  // NOTE: is_proxy is NOT used for classification (too many false positives)
+  // It's stored in details for reference only
   
-  // proxy_type == DCH check
+  // proxy_type == DCH check (Data Center Hosting)
   if (ipData.proxy_type && String(ipData.proxy_type).toUpperCase() === 'DCH') {
     signals.push('proxy_type:DCH');
   }
