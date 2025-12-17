@@ -1718,8 +1718,8 @@ app.get('/api/visitors', authMiddleware, requireActiveSubscription, async (req, 
     
     let logs;
     if (isAdmin) {
-      // Admin sees all logs within time range
-      logs = await db.visitorLogs.getByTimePeriod(hours);
+      // Admin sees logs within time range (limited to 5000 for performance)
+      logs = await db.visitorLogs.getByTimePeriod(hours, 5000);
     } else {
       // Regular users see only their logs within time range
       logs = await db.visitorLogs.getByUserAndTimePeriod(req.user.id, hours);

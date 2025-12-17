@@ -784,10 +784,12 @@ export const visitorLogs = {
 
   // Get logs within a specific time period (24 hours or 7 days)
   // Limit added to prevent overwhelming the database for large datasets
-  async getByTimePeriod(hours = 24) {
+  async getByTimePeriod(hours = 24, limit = null) {
     const cutoffDate = new Date(Date.now() - hours * 60 * 60 * 1000);
+    // Optional limit for performance (admin dashboard uses 5000)
+    const limitClause = limit ? `LIMIT ${parseInt(limit)}` : '';
     const result = await query(
-      'SELECT * FROM visitor_logs WHERE created_date >= $1 ORDER BY created_date DESC',
+      `SELECT * FROM visitor_logs WHERE created_date >= $1 ORDER BY created_date DESC ${limitClause}`,
       [cutoffDate]
     );
     return result.rows;
