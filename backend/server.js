@@ -1451,13 +1451,18 @@ app.delete('/api/hosted-links/:id', authMiddleware, requireActiveSubscription, (
 });
 
 // ==========================================
-// VISITOR LOGS (with Admin Analytics Caching)
+// ADMIN ANALYTICS API (Efficient Aggregation)
 // ==========================================
+// These endpoints use SQL aggregation instead of loading raw records
+// Much faster and lighter on the database
 
 // Admin analytics cache - reduces DB load for heavy dashboard queries
 const adminAnalyticsCache = {
-  visitors: { data: null, timestamp: 0, ttl: 30000 }, // 30 second cache
-  users: { data: null, timestamp: 0, ttl: 60000 },    // 60 second cache for users
+  summary: { data: null, timestamp: 0, ttl: 30000 },    // 30 second cache
+  daily: { data: null, timestamp: 0, ttl: 30000 },      // 30 second cache
+  topUsers: { data: null, timestamp: 0, ttl: 30000 },   // 30 second cache
+  visitors: { data: null, timestamp: 0, ttl: 30000 },   // 30 second cache (legacy)
+  users: { data: null, timestamp: 0, ttl: 60000 },      // 60 second cache for users
 };
 
 function getAdminCache(key) {
@@ -1475,6 +1480,191 @@ function setAdminCache(key, data) {
     ttl: adminAnalyticsCache[key]?.ttl || 30000
   };
 }
+
+// GET /api/admin/analytics/summary - Aggregated totals for 7 days
+app.get('/api/admin/analytics/summary', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    // Check cache first
+    const cached = getAdminCache('summary');
+    if (cached) {
+      return res.json(cached);
+    }
+
+    const cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // 7 days ago
+    
+    // Efficient SQL aggregation - single query, no raw records loaded
+    const result = await db.query(`
+      SELECT 
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE classification = 'HUMAN') as humans,
+        COUNT(*) FILTER (WHERE classification = 'BOT') as bots
+      FROM visitor_logs 
+      WHERE created_date >= $1
+    `, [cutoffDate]);
+    
+    const stats = result.rows[0];
+    const summary = {
+      total: parseInt(stats.total) || 0,
+      humans: parseInt(stats.humans) || 0,
+      bots: parseInt(stats.bots) || 0,
+      humanRate: stats.total > 0 ? Math.round((stats.humans / stats.total) * 100) : 0,
+      period: '7d',
+      cachedAt: new Date().toISOString()
+    };
+    
+    setAdminCache('summary', summary);
+    console.log('[ANALYTICS] Summary stats:', summary);
+    res.json(summary);
+  } catch (error) {
+    console.error('[ANALYTICS] Summary error:', error.message);
+    // Return cached data or zeros on error
+    const cached = getAdminCache('summary');
+    res.json(cached || { total: 0, humans: 0, bots: 0, humanRate: 0, period: '7d', error: true });
+  }
+});
+
+// GET /api/admin/analytics/daily - Daily breakdown for charts (7 days)
+app.get('/api/admin/analytics/daily', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    // Check cache first
+    const cached = getAdminCache('daily');
+    if (cached) {
+      return res.json(cached);
+    }
+
+    const cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    
+    // Group by date - returns max 7 rows
+    const result = await db.query(`
+      SELECT 
+        DATE(created_date) as date,
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE classification = 'HUMAN') as humans,
+        COUNT(*) FILTER (WHERE classification = 'BOT') as bots
+      FROM visitor_logs 
+      WHERE created_date >= $1
+      GROUP BY DATE(created_date)
+      ORDER BY date ASC
+    `, [cutoffDate]);
+    
+    // Fill in missing days with zeros
+    const dailyData = [];
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      date.setHours(0, 0, 0, 0);
+      const dateStr = date.toISOString().split('T')[0];
+      
+      const dayData = result.rows.find(r => r.date.toISOString().split('T')[0] === dateStr);
+      dailyData.push({
+        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        dateISO: dateStr,
+        total: dayData ? parseInt(dayData.total) : 0,
+        humans: dayData ? parseInt(dayData.humans) : 0,
+        bots: dayData ? parseInt(dayData.bots) : 0
+      });
+    }
+    
+    setAdminCache('daily', dailyData);
+    console.log('[ANALYTICS] Daily data: 7 days');
+    res.json(dailyData);
+  } catch (error) {
+    console.error('[ANALYTICS] Daily error:', error.message);
+    // Return empty array on error
+    res.json([]);
+  }
+});
+
+// GET /api/admin/analytics/top-users - Top users by traffic (7 days)
+app.get('/api/admin/analytics/top-users', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    // Check cache first
+    const cached = getAdminCache('topUsers');
+    if (cached) {
+      return res.json(cached);
+    }
+
+    const cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    
+    // Get top 10 users by traffic - efficient aggregation
+    const result = await db.query(`
+      SELECT 
+        vl.user_id,
+        u.email,
+        u.full_name,
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE vl.classification = 'HUMAN') as humans,
+        COUNT(*) FILTER (WHERE vl.classification = 'BOT') as bots
+      FROM visitor_logs vl
+      LEFT JOIN users u ON vl.user_id = u.id
+      WHERE vl.created_date >= $1
+      GROUP BY vl.user_id, u.email, u.full_name
+      ORDER BY total DESC
+      LIMIT 10
+    `, [cutoffDate]);
+    
+    const topUsers = result.rows.map(row => ({
+      userId: row.user_id,
+      name: row.full_name || row.email || 'Unknown',
+      email: row.email,
+      total: parseInt(row.total) || 0,
+      humans: parseInt(row.humans) || 0,
+      bots: parseInt(row.bots) || 0
+    })).filter(u => u.total > 0);
+    
+    setAdminCache('topUsers', topUsers);
+    console.log('[ANALYTICS] Top users:', topUsers.length);
+    res.json(topUsers);
+  } catch (error) {
+    console.error('[ANALYTICS] Top users error:', error.message);
+    res.json([]);
+  }
+});
+
+// GET /api/admin/analytics/recent - Paginated recent activity
+app.get('/api/admin/analytics/recent', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { page = 1, limit = 50, classification } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    
+    let whereClause = 'WHERE created_date >= $1';
+    const params = [new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)];
+    
+    if (classification && classification !== 'all') {
+      whereClause += ' AND classification = $2';
+      params.push(classification.toUpperCase());
+    }
+    
+    const result = await db.query(`
+      SELECT * FROM visitor_logs 
+      ${whereClause}
+      ORDER BY created_date DESC 
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `, [...params, parseInt(limit), offset]);
+    
+    // Get total count for pagination
+    const countResult = await db.query(`
+      SELECT COUNT(*) as count FROM visitor_logs ${whereClause}
+    `, params);
+    
+    res.json({
+      data: result.rows,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: parseInt(countResult.rows[0].count),
+        pages: Math.ceil(countResult.rows[0].count / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('[ANALYTICS] Recent activity error:', error.message);
+    res.json({ data: [], pagination: { page: 1, limit: 50, total: 0, pages: 0 } });
+  }
+});
+
+// ==========================================
+// VISITOR LOGS (Legacy - for user dashboard)
+// ==========================================
 
 app.get('/api/visitors', authMiddleware, requireActiveSubscription, async (req, res) => {
   const { timeRange = '7d' } = req.query;

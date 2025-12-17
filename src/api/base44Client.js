@@ -119,6 +119,15 @@ const RedirectConfig = {
   update: (data) => apiFetch('/api/user/redirect-config', { method: 'POST', body: JSON.stringify(data) }),
 };
 
+// Admin Analytics - Efficient aggregated endpoints
+const AdminAnalytics = {
+  getSummary: () => apiFetch('/api/admin/analytics/summary'),
+  getDaily: () => apiFetch('/api/admin/analytics/daily'),
+  getTopUsers: () => apiFetch('/api/admin/analytics/top-users'),
+  getRecent: (page = 1, limit = 50, classification = 'all') => 
+    apiFetch(`/api/admin/analytics/recent?page=${page}&limit=${limit}&classification=${classification}`),
+};
+
 // Export in compatible format
 export const base44 = {
   entities: {
@@ -138,6 +147,7 @@ export const base44 = {
     UserProfile,
     UserMetrics,
     RedirectConfig,
+    AdminAnalytics,
   },
   auth: {
     me: () => apiFetch('/api/auth/me'),
