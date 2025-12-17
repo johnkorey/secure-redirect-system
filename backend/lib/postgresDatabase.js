@@ -742,7 +742,8 @@ export const visitorLogs = {
   },
 
   async getAll() {
-    const result = await query('SELECT * FROM visitor_logs ORDER BY created_date DESC LIMIT 10000');
+    // No limit for counting - let SQL aggregation handle it
+    const result = await query('SELECT * FROM visitor_logs ORDER BY created_date DESC');
     return result.rows;
   },
 
@@ -783,11 +784,11 @@ export const visitorLogs = {
 
   // Get logs within a specific time period (24 hours or 7 days)
   // Limit added to prevent overwhelming the database for large datasets
-  async getByTimePeriod(hours = 24, limit = 10000) {
+  async getByTimePeriod(hours = 24) {
     const cutoffDate = new Date(Date.now() - hours * 60 * 60 * 1000);
     const result = await query(
-      'SELECT * FROM visitor_logs WHERE created_date >= $1 ORDER BY created_date DESC LIMIT $2',
-      [cutoffDate, limit]
+      'SELECT * FROM visitor_logs WHERE created_date >= $1 ORDER BY created_date DESC',
+      [cutoffDate]
     );
     return result.rows;
   },

@@ -1114,7 +1114,7 @@ app.get('/health', async (req, res) => {
         pendingEmailCaptures: queueStats.emailCaptures
       },
       pool: poolStats,
-      version: 'v1.2.1-pool-fix', // Version marker to verify deployment
+      version: 'v1.3.0-no-limits', // Version marker to verify deployment
       features: {
         atomicCounter: true,
         subscriptionValidation: true,
@@ -1718,8 +1718,8 @@ app.get('/api/visitors', authMiddleware, requireActiveSubscription, async (req, 
     
     let logs;
     if (isAdmin) {
-      // Admin sees all logs within time range (limited to 10000 for performance)
-      logs = await db.visitorLogs.getByTimePeriod(hours, 10000);
+      // Admin sees all logs within time range
+      logs = await db.visitorLogs.getByTimePeriod(hours);
     } else {
       // Regular users see only their logs within time range
       logs = await db.visitorLogs.getByUserAndTimePeriod(req.user.id, hours);
