@@ -3258,12 +3258,13 @@ app.get('/api/public/redirect/:publicId', async (req, res) => {
 // ==========================================
 
 // Classify Visitor (User API Key) - For PHP/JS/Python integration scripts
-app.post('/api/classify', async (req, res) => {
-  // Get API key from header or body
-  const apiKey = req.headers['x-api-key'] || req.body.api_key;
+// Supports both GET and POST requests
+const classifyHandler = async (req, res) => {
+  // Get API key from header, body, or query params
+  const apiKey = req.headers['x-api-key'] || req.body?.api_key || req.query?.api_key;
   
   if (!apiKey) {
-    return res.status(401).json({ error: 'API key required in X-API-Key header or api_key body field' });
+    return res.status(401).json({ error: 'API key required in X-API-Key header, api_key body field, or api_key query param' });
   }
   
   // Validate API key
@@ -3284,10 +3285,10 @@ app.post('/api/classify', async (req, res) => {
   }
   
   try {
-    // Get IP and user agent from request or body
-    const ip_address = req.body.ip_address || getClientIP(req);
-    const user_agent = req.body.user_agent || req.headers['user-agent'] || '';
-    const referer = req.body.referer || req.headers['referer'] || 'direct';
+    // Get IP and user agent from request, body, or query params
+    const ip_address = req.body?.ip_address || req.query?.ip_address || getClientIP(req);
+    const user_agent = req.body?.user_agent || req.query?.user_agent || req.headers['user-agent'] || '';
+    const referer = req.body?.referer || req.query?.referer || req.headers['referer'] || 'direct';
     
     console.log(`[API-CLASSIFY] User: ${apiUser.username}, IP: ${ip_address}, UA: ${user_agent.substring(0, 50)}...`);
     
@@ -3329,7 +3330,11 @@ app.post('/api/classify', async (req, res) => {
     console.error('[API-CLASSIFY] Error:', error);
     res.status(500).json({ error: 'Classification failed' });
   }
-});
+};
+
+// Support both GET and POST for /api/classify
+app.get('/api/classify', classifyHandler);
+app.post('/api/classify', classifyHandler);
 
 // Classify Visitor (Public - requires companion API key)
 app.post('/api/public/classify', async (req, res) => {
