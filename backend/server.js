@@ -1481,7 +1481,7 @@ function setAdminCache(key, data) {
   };
 }
 
-// GET /api/admin/analytics/summary - Aggregated totals for 7 days
+// GET /api/admin/analytics/summary - Aggregated totals (ALL TIME)
 app.get('/api/admin/analytics/summary', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     // Check cache first
@@ -1489,26 +1489,29 @@ app.get('/api/admin/analytics/summary', authMiddleware, adminMiddleware, async (
     if (cached) {
       return res.json(cached);
     }
-
-    const cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // 7 days ago
     
-    // Efficient SQL aggregation - single query, no raw records loaded
+    // Efficient SQL aggregation - ALL TIME totals, no date filter
     const result = await db.query(`
       SELECT 
         COUNT(*) as total,
         COUNT(*) FILTER (WHERE classification = 'HUMAN') as humans,
         COUNT(*) FILTER (WHERE classification = 'BOT') as bots
-      FROM visitor_logs 
-      WHERE created_date >= $1
-    `, [cutoffDate]);
+      FROM visitor_logs
+    `);
+    
+    // Get active API users count
+    const usersResult = await db.query(`
+      SELECT COUNT(*) as active_users FROM api_users WHERE status = 'active'
+    `);
     
     const stats = result.rows[0];
     const summary = {
       total: parseInt(stats.total) || 0,
       humans: parseInt(stats.humans) || 0,
       bots: parseInt(stats.bots) || 0,
+      activeUsers: parseInt(usersResult.rows[0].active_users) || 0,
       humanRate: stats.total > 0 ? Math.round((stats.humans / stats.total) * 100) : 0,
-      period: '7d',
+      period: 'all-time',
       cachedAt: new Date().toISOString()
     };
     

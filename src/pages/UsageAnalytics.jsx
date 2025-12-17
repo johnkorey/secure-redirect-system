@@ -89,12 +89,7 @@ export default function UsageAnalytics() {
             )}
           </div>
           <p className="text-slate-500">
-            7-day API usage statistics • Auto-refreshes every 30s
-            {summary.cachedAt && (
-              <span className="ml-2 text-xs text-slate-400">
-                (cached)
-              </span>
-            )}
+            All-time statistics • Charts show last 7 days • Auto-refreshes every 30s
           </p>
         </div>
         
@@ -149,47 +144,43 @@ export default function UsageAnalytics() {
         <Card className="p-6">
           <div className="flex items-center gap-3 mb-2">
             <Activity className="w-5 h-5 text-blue-600" />
-            <p className="text-sm text-slate-500">Total Requests (7d)</p>
+            <p className="text-sm text-slate-500">Total Visitors</p>
           </div>
-          <p className="text-3xl font-bold text-slate-900">{filteredTotal.toLocaleString()}</p>
-          <p className="text-xs text-slate-500 mt-2">
-            {classificationFilter !== 'all' && `Showing ${classificationFilter.toLowerCase()}s only`}
-          </p>
+          <p className="text-3xl font-bold text-slate-900">{summary.total.toLocaleString()}</p>
+          <p className="text-xs text-slate-500 mt-2">All time</p>
         </Card>
 
         <Card className="p-6">
           <div className="flex items-center gap-3 mb-2">
-            <Users className="w-5 h-5 text-emerald-600" />
-            <p className="text-sm text-slate-500">Active Users</p>
+            <UserCheck className="w-5 h-5 text-emerald-600" />
+            <p className="text-sm text-slate-500">Human Visitors</p>
           </div>
-          <p className="text-3xl font-bold text-slate-900">
-            {apiUsers.filter(u => u.status === 'active').length}
-          </p>
-          <p className="text-xs text-slate-500 mt-2">
-            {apiUsers.length} total users
-          </p>
-        </Card>
-
-        <Card className="p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <Clock className="w-5 h-5 text-amber-600" />
-            <p className="text-sm text-slate-500">Avg Response Time</p>
-          </div>
-          <p className="text-3xl font-bold text-slate-900">45ms</p>
+          <p className="text-3xl font-bold text-slate-900">{summary.humans.toLocaleString()}</p>
           <p className="text-xs text-emerald-600 mt-2">
-            Fast classification
+            {summary.humanRate || 0}% of traffic
           </p>
         </Card>
 
         <Card className="p-6">
           <div className="flex items-center gap-3 mb-2">
-            <TrendingUp className="w-5 h-5 text-purple-600" />
-            <p className="text-sm text-slate-500">Human Detection Rate</p>
+            <Bot className="w-5 h-5 text-amber-600" />
+            <p className="text-sm text-slate-500">Detected Bots</p>
+          </div>
+          <p className="text-3xl font-bold text-slate-900">{summary.bots.toLocaleString()}</p>
+          <p className="text-xs text-amber-600 mt-2">
+            {summary.total > 0 ? (100 - summary.humanRate) : 0}% of traffic
+          </p>
+        </Card>
+
+        <Card className="p-6">
+          <div className="flex items-center gap-3 mb-2">
+            <Users className="w-5 h-5 text-purple-600" />
+            <p className="text-sm text-slate-500">Active API Users</p>
           </div>
           <p className="text-3xl font-bold text-slate-900">
-            {summary.humanRate || 0}%
+            {summary.activeUsers || apiUsers.filter(u => u.status === 'active').length}
           </p>
-          <p className="text-xs text-slate-500 mt-2">Accuracy metric</p>
+          <p className="text-xs text-slate-500 mt-2">{apiUsers.length} total users</p>
         </Card>
       </div>
 
