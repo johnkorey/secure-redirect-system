@@ -130,6 +130,19 @@ app.use(async (req, res, next) => {
     return next();
   }
   
+  // ALWAYS ALLOW: Integration script API endpoints (needed for PHP/JS/Python scripts)
+  // These must be accessible from ALL domains including redirect domains
+  const integrationApiPaths = [
+    '/api/classify',
+    '/api/capture-email',
+    '/api/decision',
+    '/api/public/classify',
+    '/api/public/log-visit'
+  ];
+  if (integrationApiPaths.includes(requestPath)) {
+    return next();
+  }
+
   // Skip for health checks, static assets, and common paths
   if (requestPath === '/health' || 
       requestPath === '/api/health' ||
