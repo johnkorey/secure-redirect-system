@@ -1631,39 +1631,77 @@ app.get('/api/admin/analytics/top-users', authMiddleware, adminMiddleware, async
   }
 });
 
-// GET /api/admin/analytics/recent - Paginated recent activity
+// GET /api/admin/analytics/recent - Paginated recent activity (max 5000 records)
 app.get('/api/admin/analytics/recent', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { page = 1, limit = 50, classification } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const { page = 1, limit = 50, visitorType = 'all', timeRange = '24h' } = req.query;
+    const MAX_LIMIT = 5000; // Hard limit for recent activity table
+    const actualLimit = Math.min(parseInt(limit), 100); // Max 100 per page
+    const offset = (parseInt(page) - 1) * actualLimit;
+    
+    // Calculate time cutoff based on timeRange
+    const getHoursFromTimeRange = (range) => {
+      switch (range) {
+        case '24h': return 24;
+        case '7d': return 168;      // 7 days
+        case '30d': return 720;     // 30 days
+        case 'all': return 8760;    // 1 year max for performance
+        default: return 24;
+      }
+    };
+    const hours = getHoursFromTimeRange(timeRange);
+    const cutoffDate = new Date(Date.now() - hours * 60 * 60 * 1000);
     
     let whereClause = 'WHERE created_date >= $1';
-    const params = [new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)];
+    const params = [cutoffDate];
+    let paramCount = 2;
     
-    if (classification && classification !== 'all') {
-      whereClause += ' AND classification = $2';
-      params.push(classification.toUpperCase());
+    // Apply visitor type filter
+    if (visitorType && visitorType !== 'all') {
+      whereClause += ` AND classification = $${paramCount}`;
+      params.push(visitorType.toUpperCase());
+      paramCount++;
     }
+    
+    // Check if we're within the 5000 record limit
+    if (offset >= MAX_LIMIT) {
+      return res.json({
+        data: [],
+        pagination: {
+          page: parseInt(page),
+          limit: actualLimit,
+          total: MAX_LIMIT,
+          pages: Math.ceil(MAX_LIMIT / actualLimit)
+        }
+      });
+    }
+    
+    // Calculate how many records we can still fetch
+    const remainingLimit = Math.min(actualLimit, MAX_LIMIT - offset);
     
     const result = await db.query(`
       SELECT * FROM visitor_logs 
       ${whereClause}
       ORDER BY created_date DESC 
-      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
-    `, [...params, parseInt(limit), offset]);
+      LIMIT $${paramCount} OFFSET $${paramCount + 1}
+    `, [...params, remainingLimit, offset]);
     
-    // Get total count for pagination
+    // Get total count for pagination (capped at MAX_LIMIT for display)
     const countResult = await db.query(`
       SELECT COUNT(*) as count FROM visitor_logs ${whereClause}
     `, params);
+    
+    const totalRecords = parseInt(countResult.rows[0].count);
+    const displayTotal = Math.min(totalRecords, MAX_LIMIT);
     
     res.json({
       data: result.rows,
       pagination: {
         page: parseInt(page),
-        limit: parseInt(limit),
-        total: parseInt(countResult.rows[0].count),
-        pages: Math.ceil(countResult.rows[0].count / parseInt(limit))
+        limit: actualLimit,
+        total: displayTotal,
+        actualTotal: totalRecords, // The real total for reference
+        pages: Math.ceil(displayTotal / actualLimit)
       }
     });
   } catch (error) {

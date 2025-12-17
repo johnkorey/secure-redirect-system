@@ -124,8 +124,8 @@ const AdminAnalytics = {
   getSummary: () => apiFetch('/api/admin/analytics/summary'),
   getDaily: () => apiFetch('/api/admin/analytics/daily'),
   getTopUsers: () => apiFetch('/api/admin/analytics/top-users'),
-  getRecent: (page = 1, limit = 50, classification = 'all') => 
-    apiFetch(`/api/admin/analytics/recent?page=${page}&limit=${limit}&classification=${classification}`),
+  getRecent: (page = 1, limit = 50, visitorType = 'all', timeRange = '24h') => 
+    apiFetch(`/api/admin/analytics/recent?page=${page}&limit=${limit}&visitorType=${visitorType}&timeRange=${timeRange}`),
 };
 
 // Export in compatible format
