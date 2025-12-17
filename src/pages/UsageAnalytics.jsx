@@ -254,7 +254,7 @@ export default function UsageAnalytics() {
           <h3 className="text-lg font-semibold text-slate-900 mb-4">
             Top API Users
             <span className="text-sm font-normal text-slate-500 ml-2">
-              (Human vs Bot Visits - 7 Days)
+              (All Time + Today's Usage)
             </span>
           </h3>
           {topUsersLoading ? (
@@ -300,34 +300,40 @@ export default function UsageAnalytics() {
                   <Bar 
                     dataKey="humans" 
                     fill="#10b981" 
-                    name="🟢 Humans"
+                    name="🟢 Humans (All Time)"
                     radius={[0, 4, 4, 0]}
                     barSize={16}
                   />
                   <Bar 
                     dataKey="bots" 
                     fill="#f59e0b" 
-                    name="🟠 Bots"
+                    name="🟠 Bots (All Time)"
                     radius={[0, 4, 4, 0]}
                     barSize={16}
                   />
                 </BarChart>
               </ResponsiveContainer>
               
-              {/* Data table for clarity */}
+              {/* Data table with All Time and Today columns */}
               <div className="mt-4 border-t border-slate-200 pt-4">
-                <div className="grid grid-cols-4 gap-2 text-xs font-medium text-slate-500 mb-2">
-                  <div>User</div>
+                <div className="grid grid-cols-7 gap-2 text-xs font-medium text-slate-500 mb-2">
+                  <div className="col-span-1">User</div>
                   <div className="text-emerald-600">Humans</div>
                   <div className="text-amber-600">Bots</div>
                   <div>Total</div>
+                  <div className="text-blue-600 border-l pl-2">Today 👤</div>
+                  <div className="text-orange-600">Today 🤖</div>
+                  <div className="text-purple-600">Today Total</div>
                 </div>
                 {topUsers.map((user, idx) => (
-                  <div key={idx} className="grid grid-cols-4 gap-2 text-sm py-1 border-b border-slate-100">
-                    <div className="font-medium text-slate-700 truncate">{user.name}</div>
+                  <div key={idx} className="grid grid-cols-7 gap-2 text-sm py-1.5 border-b border-slate-100">
+                    <div className="font-medium text-slate-700 truncate col-span-1">{user.name}</div>
                     <div className="text-emerald-600 font-semibold">{user.humans.toLocaleString()}</div>
                     <div className="text-amber-600 font-semibold">{user.bots.toLocaleString()}</div>
                     <div className="text-slate-500">{user.total.toLocaleString()}</div>
+                    <div className="text-blue-600 font-semibold border-l pl-2">{(user.todayHumans || 0).toLocaleString()}</div>
+                    <div className="text-orange-600 font-semibold">{(user.todayBots || 0).toLocaleString()}</div>
+                    <div className="text-purple-600 font-semibold">{(user.todayTotal || 0).toLocaleString()}</div>
                   </div>
                 ))}
               </div>

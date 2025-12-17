@@ -1578,7 +1578,7 @@ app.get('/api/admin/analytics/daily', authMiddleware, adminMiddleware, async (re
   }
 });
 
-// GET /api/admin/analytics/top-users - Top users by traffic (7 days)
+// GET /api/admin/analytics/top-users - Top users by traffic (ALL TIME + daily usage)
 app.get('/api/admin/analytics/top-users', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     // Check cache first
@@ -1587,9 +1587,11 @@ app.get('/api/admin/analytics/top-users', authMiddleware, adminMiddleware, async
       return res.json(cached);
     }
 
-    const cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    // Today's start for daily stats
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
     
-    // Get top 10 users by traffic - efficient aggregation
+    // Get top 10 users by ALL-TIME traffic with today's usage
     const result = await db.query(`
       SELECT 
         vl.user_id,
@@ -1597,14 +1599,16 @@ app.get('/api/admin/analytics/top-users', authMiddleware, adminMiddleware, async
         u.full_name,
         COUNT(*) as total,
         COUNT(*) FILTER (WHERE vl.classification = 'HUMAN') as humans,
-        COUNT(*) FILTER (WHERE vl.classification = 'BOT') as bots
+        COUNT(*) FILTER (WHERE vl.classification = 'BOT') as bots,
+        COUNT(*) FILTER (WHERE vl.created_date >= $1) as today_total,
+        COUNT(*) FILTER (WHERE vl.classification = 'HUMAN' AND vl.created_date >= $1) as today_humans,
+        COUNT(*) FILTER (WHERE vl.classification = 'BOT' AND vl.created_date >= $1) as today_bots
       FROM visitor_logs vl
       LEFT JOIN users u ON vl.user_id = u.id
-      WHERE vl.created_date >= $1
       GROUP BY vl.user_id, u.email, u.full_name
       ORDER BY total DESC
       LIMIT 10
-    `, [cutoffDate]);
+    `, [todayStart]);
     
     const topUsers = result.rows.map(row => ({
       userId: row.user_id,
@@ -1612,7 +1616,10 @@ app.get('/api/admin/analytics/top-users', authMiddleware, adminMiddleware, async
       email: row.email,
       total: parseInt(row.total) || 0,
       humans: parseInt(row.humans) || 0,
-      bots: parseInt(row.bots) || 0
+      bots: parseInt(row.bots) || 0,
+      todayTotal: parseInt(row.today_total) || 0,
+      todayHumans: parseInt(row.today_humans) || 0,
+      todayBots: parseInt(row.today_bots) || 0
     })).filter(u => u.total > 0);
     
     setAdminCache('topUsers', topUsers);
