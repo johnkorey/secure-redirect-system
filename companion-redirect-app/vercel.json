@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "regions": ["all"],
+  "env": {
+    "MAIN_API_URL": {
+      "description": "URL of your main Secure Redirect System API",
+      "required": true
+    },
+    "COMPANION_API_KEY": {
+      "description": "API key for companion app authentication",
+      "required": true
+    }
+  }
+}
+

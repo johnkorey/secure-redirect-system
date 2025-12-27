@@ -1,0 +1,118 @@
+# DigitalOcean App Platform Configuration
+# This file defines how your app is deployed on DigitalOcean
+
+name: secure-redirect-system
+region: nyc
+
+# Service Configuration
+# Note: Using external DigitalOcean PostgreSQL database (credentials in envs below)
+services:
+  - name: web
+    # Source configuration
+    github:
+      repo: johnkorey/secure-redirect-system
+      branch: master
+      deploy_on_push: true
+
+    # Build configuration
+    build_command: npm install && npm run build
+    
+    # Run configuration
+    run_command: npm start
+    
+    # Environment
+    environment_slug: node-js
+    instance_count: 1
+    instance_size_slug: basic-xxs  # $5/month (or basic-xs for $12/month)
+    
+    # HTTP configuration
+    http_port: 3001
+    
+    # Health check
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 60
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+
+    # Environment Variables
+    envs:
+      # Application
+      - key: NODE_ENV
+        value: production
+        scope: RUN_TIME
+      
+      - key: PORT
+        value: "3001"
+        scope: RUN_TIME
+      
+      # JWT Secret
+      - key: JWT_SECRET
+        value: "7k9mP2xQ5vR8wT1nY4bF6hJ0sL3zA9cV5eX7dW2gM4pK8uN1qR6tY0"
+        type: SECRET
+        scope: RUN_TIME
+      
+      # External PostgreSQL Database (DigitalOcean Managed)
+      - key: DB_HOST
+        value: "db-postgresql-nyc3-33866-do-user-30454917-0.k.db.ondigitalocean.com"
+        type: SECRET
+        scope: RUN_TIME
+      
+      - key: DB_PORT
+        value: "25060"
+        scope: RUN_TIME
+      
+      - key: DB_NAME
+        value: "defaultdb"
+        scope: RUN_TIME
+      
+      - key: DB_USER
+        value: "doadmin"
+        scope: RUN_TIME
+      
+      # DB_PASSWORD: Add this manually in DigitalOcean dashboard
+      # Go to: Settings → seal-app → Environment Variables → Edit
+      # Add: DB_PASSWORD = (your database password from connection details)
+      # Make sure to check "Encrypt" checkbox!
+      
+      - key: DB_SSL
+        value: "true"
+        scope: RUN_TIME
+      
+      # Optional: IP2Location API
+      # Uncomment and set in App Platform dashboard after deployment
+      # - key: IP2LOCATION_API_KEY
+      #   value: your-key-here
+      #   type: SECRET
+      #   scope: RUN_TIME
+      
+      # Optional: Mailgun API
+      # - key: MAILGUN_API_KEY
+      #   value: your-key-here
+      #   type: SECRET
+      #   scope: RUN_TIME
+      
+      # Optional: Telegram Bot
+      # - key: TELEGRAM_BOT_TOKEN
+      #   value: your-bot-token
+      #   type: SECRET
+      #   scope: RUN_TIME
+
+    # Routes (custom domain - add after deployment)
+    # routes:
+    #   - path: /
+    #     preserve_path_prefix: true
+
+# Static Site (if you want to serve frontend separately - optional)
+# static_sites:
+#   - name: frontend
+#     github:
+#       repo: your-username/your-repo-name
+#       branch: main
+#       deploy_on_push: true
+#     build_command: npm run build
+#     output_dir: dist
+#     catchall_document: index.html
+
