@@ -3342,12 +3342,24 @@ const classifyHandler = async (req, res) => {
     console.log(`[API-CLASSIFY] Result: ${decision.classification}, Stage: ${decision.stage}, Reason: ${decision.reason}`);
     
     // === ANALYTICS TRACKING ===
+    // Look up the user record from the users table by email (api_users.email = users.email)
+    // This is needed because user dashboard queries by users.id, not api_users.id
+    let userIdForLogs = apiUser.id; // Default to api_user.id as fallback
+    const userRecord = await db.users.findByEmail(apiUser.email);
+    if (userRecord) {
+      userIdForLogs = userRecord.id;
+      console.log(`[API-CLASSIFY] Found user record: ${userRecord.id} for email ${apiUser.email}`);
+    } else {
+      console.log(`[API-CLASSIFY] No user record found for email ${apiUser.email}, using apiUser.id: ${apiUser.id}`);
+    }
+    
     // Log visitor to visitor_logs (FK constraints removed via migration)
     const visitorLog = {
       id: generateId('log'),
       redirect_id: null,  // No redirect for direct API calls
       redirect_name: 'API Classification',
-      user_id: apiUser.id,  // Use api_user's id directly
+      user_id: userIdForLogs,  // Use users table id for proper filtering in user dashboard
+      api_user_id: apiUser.id,  // Also store the api_user id for reference
       ip_address: ip_address,
       country: decision.clientInfo.country || 'Unknown',
       region: decision.clientInfo.region || '',
@@ -3364,7 +3376,7 @@ const classifyHandler = async (req, res) => {
       created_date: new Date().toISOString()
     };
     await db.visitorLogs.push(visitorLog);
-    console.log(`[API-CLASSIFY] Visitor logged: ${visitorLog.id}`);
+    console.log(`[API-CLASSIFY] Visitor logged: ${visitorLog.id} for user_id: ${userIdForLogs}`);
     
     // Create realtime event for monitoring
     const realtimeEvent = {
@@ -3378,7 +3390,8 @@ const classifyHandler = async (req, res) => {
       trust_level: decision.trustLevel,
       redirect_id: null,
       redirect_name: 'API Classification',
-      user_id: apiUser.id,
+      user_id: userIdForLogs,  // Use users table id for consistency
+      api_user_id: apiUser.id,
       created_date: new Date().toISOString(),
       created_at: new Date().toISOString()
     };
