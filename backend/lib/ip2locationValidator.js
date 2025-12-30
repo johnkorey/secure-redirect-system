@@ -274,41 +274,80 @@ export async function validateIP(ip, apiKey) {
 }
 
 /**
+ * Check if an IP is private/internal
+ * @param {string} ip - IP address
+ * @returns {boolean}
+ */
+function isPrivateIPAddress(ip) {
+  if (!ip) return false;
+  // Clean IPv6-mapped IPv4 addresses
+  const cleanIP = ip.replace(/^::ffff:/, '');
+  const parts = cleanIP.split('.');
+  if (parts.length !== 4) return false;
+  const [a, b] = parts.map(Number);
+  
+  // Private ranges: 10.x.x.x, 172.16-31.x.x, 192.168.x.x, 127.x.x.x
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 127) return true;
+  
+  return false;
+}
+
+/**
  * Get client IP from request
- * Handles various proxy headers
+ * Handles various proxy headers and skips private IPs
  * @param {Object} req - Express request object
  * @returns {string} Client IP address
  */
 export function getClientIP(req) {
-  // Check various headers for the real IP (when behind proxies/load balancers)
-  const forwardedFor = req.headers['x-forwarded-for'];
-  if (forwardedFor) {
-    // X-Forwarded-For can contain multiple IPs, take the first one
-    const ips = forwardedFor.split(',').map(ip => ip.trim());
-    return ips[0];
-  }
-
-  // Other common headers
-  const realIP = req.headers['x-real-ip'];
-  if (realIP) {
-    return realIP;
-  }
-
-  const cfConnectingIP = req.headers['cf-connecting-ip']; // Cloudflare
-  if (cfConnectingIP) {
+  // Priority 1: Cloudflare (most reliable when using CF)
+  const cfConnectingIP = req.headers['cf-connecting-ip'];
+  if (cfConnectingIP && !isPrivateIPAddress(cfConnectingIP)) {
     return cfConnectingIP;
   }
 
-  const trueClientIP = req.headers['true-client-ip']; // Akamai/Cloudflare
-  if (trueClientIP) {
+  // Priority 2: True-Client-IP (Akamai/Cloudflare Enterprise)
+  const trueClientIP = req.headers['true-client-ip'];
+  if (trueClientIP && !isPrivateIPAddress(trueClientIP)) {
     return trueClientIP;
   }
 
+  // Priority 3: X-Real-IP
+  const realIP = req.headers['x-real-ip'];
+  if (realIP && !isPrivateIPAddress(realIP)) {
+    return realIP;
+  }
+
+  // Priority 4: X-Forwarded-For - find first PUBLIC IP
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (forwardedFor) {
+    const ips = forwardedFor.split(',').map(ip => ip.trim().replace(/^::ffff:/, ''));
+    // Find the first non-private IP (the real client)
+    for (const ip of ips) {
+      if (!isPrivateIPAddress(ip)) {
+        return ip;
+      }
+    }
+    // If all are private, return the first one anyway
+    return ips[0];
+  }
+
+  // Priority 5: Zeabur specific headers
+  const zeaburClientIP = req.headers['x-zeabur-client-ip'] || req.headers['x-envoy-external-address'];
+  if (zeaburClientIP && !isPrivateIPAddress(zeaburClientIP)) {
+    return zeaburClientIP;
+  }
+
   // Fallback to connection remote address
-  return req.connection?.remoteAddress || 
-         req.socket?.remoteAddress || 
-         req.ip ||
-         'unknown';
+  const remoteAddr = req.connection?.remoteAddress || 
+                     req.socket?.remoteAddress || 
+                     req.ip ||
+                     'unknown';
+  
+  // Clean IPv6-mapped IPv4
+  return remoteAddr.replace(/^::ffff:/, '');
 }
 
 export default {

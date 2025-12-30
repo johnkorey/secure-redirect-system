@@ -3308,7 +3308,7 @@ const classifyHandler = async (req, res) => {
     
     // Log detected IP source for debugging
     console.log(`[API-CLASSIFY] User: ${apiUser.username}, IP: ${ip_address} (source: ${ip_source}), UA: ${user_agent.substring(0, 50)}...`);
-    console.log(`[API-CLASSIFY] Headers: x-forwarded-for=${req.headers['x-forwarded-for'] || 'none'}, x-real-ip=${req.headers['x-real-ip'] || 'none'}, remoteAddress=${req.socket?.remoteAddress || 'none'}`);
+    console.log(`[API-CLASSIFY] IP Headers: x-forwarded-for="${req.headers['x-forwarded-for'] || 'none'}", x-real-ip="${req.headers['x-real-ip'] || 'none'}", cf-connecting-ip="${req.headers['cf-connecting-ip'] || 'none'}", remoteAddress="${req.socket?.remoteAddress || 'none'}"`);
     
     // Create a mock request object for the decision engine
     const mockReq = {
@@ -3346,6 +3346,11 @@ const classifyHandler = async (req, res) => {
       debug: {
         detected_ip: ip_address,
         ip_source: ip_source,
+        headers_received: {
+          'x-forwarded-for': req.headers['x-forwarded-for'] || null,
+          'x-real-ip': req.headers['x-real-ip'] || null,
+          'cf-connecting-ip': req.headers['cf-connecting-ip'] || null
+        },
         tip: ip_source === 'auto_detected' ? 'Pass your real IP with ?ip_address=YOUR_IP if this is incorrect' : null
       }
     });
