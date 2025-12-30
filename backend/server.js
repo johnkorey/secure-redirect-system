@@ -288,7 +288,8 @@ async function initializeServer() {
     // 4. Check if admin user exists
     console.log('\n[4/4] Checking admin account...');
     const existingAdmin = await db.users.findByEmail('admin@example.com');
-    const adminPassword = await hashPassword('admin123');
+    const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'ChangeMe123!';
+    const adminPassword = await hashPassword(defaultAdminPassword);
     
     if (!existingAdmin) {
       console.log('      Creating default admin account...');
@@ -316,11 +317,12 @@ async function initializeServer() {
     const existingApiUser = await db.apiUsers.findByEmail('admin@example.com');
     if (!existingApiUser) {
       console.log('      Creating admin API user...');
+      const adminApiKey = 'ak_' + crypto.randomBytes(16).toString('hex');
       await db.apiUsers.create({
         id: 'apiuser-admin',
         username: 'admin',
         email: 'admin@example.com',
-        api_key: 'ak_admin_123456789',
+        api_key: adminApiKey,
         access_type: 'monthly',
         status: 'active',
         daily_link_limit: 2,
@@ -354,7 +356,7 @@ async function initializeServer() {
       // Announcement already exists, ignore error
     }
 
-    console.log('      ✓ Admin account ready: admin@example.com / admin123');
+    console.log('      ✓ Admin account ready');
     
     const initTime = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log('\n' + '='.repeat(70));
@@ -4065,9 +4067,7 @@ initializeServer()
       console.log(`   Type: PostgreSQL`);
       console.log(`   Status: Connected ✓`);
       console.log('');
-      console.log('🔐 Admin Login:');
-      console.log('   Email: admin@example.com');
-      console.log('   Password: admin123');
+      console.log('🔐 Admin Login: Use credentials set during setup');
       console.log('');
       console.log('📊 Endpoints:');
       console.log(`   Health Check: http://localhost:${PORT}/health`);

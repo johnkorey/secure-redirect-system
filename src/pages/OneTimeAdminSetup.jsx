@@ -16,10 +16,10 @@ export default function OneTimeAdminSetup() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [formData, setFormData] = useState({
-    email: 'admin@example.com',
-    password: 'admin123',
-    confirmPassword: 'admin123',
-    fullName: 'Admin User'
+    email: '',
+    password: '',
+    confirmPassword: '',
+    fullName: ''
   });
 
   const handleSubmit = async (e) => {
