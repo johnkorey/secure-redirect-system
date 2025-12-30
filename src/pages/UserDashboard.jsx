@@ -25,6 +25,7 @@ export default function UserDashboard() {
   const { data: currentUser, refetch: refetchUser } = useQuery({
     queryKey: ['current-user'],
     queryFn: () => base44.auth.me(),
+    refetchInterval: 10000, // Refresh every 10 seconds to show updated API usage
   });
 
   // apiUser comes from the /api/auth/me endpoint
@@ -288,14 +289,19 @@ export default function UserDashboard() {
                         <p className="text-xs text-white/70 mb-1">API Requests Remaining Today</p>
                         <p className="text-lg font-bold">
                           {(() => {
-                            const remaining = Math.max(0, (apiUser?.daily_request_limit || 20000) - (apiUser?.current_usage || 0));
-                            if (remaining >= 1000) {
-                              return `${(remaining / 1000).toFixed(1)}K`;
-                            }
+                            const limit = apiUser?.daily_request_limit || 20000;
+                            const used = apiUser?.current_usage || 0;
+                            const remaining = Math.max(0, limit - used);
+                            // Show exact number for better accuracy
                             return remaining.toLocaleString();
                           })()}
-                          <span className="text-sm font-normal text-white/70"> / {((apiUser?.daily_request_limit || 20000) / 1000).toFixed(0)}K</span>
+                          <span className="text-sm font-normal text-white/70"> / {(apiUser?.daily_request_limit || 20000).toLocaleString()}</span>
                         </p>
+                        {(apiUser?.current_usage > 0) && (
+                          <p className="text-xs text-white/60 mt-1">
+                            ({apiUser.current_usage.toLocaleString()} used today)
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
