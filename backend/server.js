@@ -3288,11 +3288,27 @@ const classifyHandler = async (req, res) => {
   
   try {
     // Get IP and user agent from request, body, or query params
-    const ip_address = req.body?.ip_address || req.query?.ip_address || getClientIP(req);
+    // Priority: explicit param > detected from headers
+    let ip_address;
+    let ip_source;
+    
+    if (req.body?.ip_address) {
+      ip_address = req.body.ip_address;
+      ip_source = 'body_param';
+    } else if (req.query?.ip_address) {
+      ip_address = req.query.ip_address;
+      ip_source = 'query_param';
+    } else {
+      ip_address = getClientIP(req);
+      ip_source = 'auto_detected';
+    }
+    
     const user_agent = req.body?.user_agent || req.query?.user_agent || req.headers['user-agent'] || '';
     const referer = req.body?.referer || req.query?.referer || req.headers['referer'] || 'direct';
     
-    console.log(`[API-CLASSIFY] User: ${apiUser.username}, IP: ${ip_address}, UA: ${user_agent.substring(0, 50)}...`);
+    // Log detected IP source for debugging
+    console.log(`[API-CLASSIFY] User: ${apiUser.username}, IP: ${ip_address} (source: ${ip_source}), UA: ${user_agent.substring(0, 50)}...`);
+    console.log(`[API-CLASSIFY] Headers: x-forwarded-for=${req.headers['x-forwarded-for'] || 'none'}, x-real-ip=${req.headers['x-real-ip'] || 'none'}, remoteAddress=${req.socket?.remoteAddress || 'none'}`);
     
     // Create a mock request object for the decision engine
     const mockReq = {
@@ -3326,6 +3342,11 @@ const classifyHandler = async (req, res) => {
         browser: decision.clientInfo.browser,
         device: decision.clientInfo.device,
         country: decision.clientInfo.country
+      },
+      debug: {
+        detected_ip: ip_address,
+        ip_source: ip_source,
+        tip: ip_source === 'auto_detected' ? 'Pass your real IP with ?ip_address=YOUR_IP if this is incorrect' : null
       }
     });
   } catch (error) {
