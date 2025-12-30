@@ -3333,6 +3333,55 @@ const classifyHandler = async (req, res) => {
     // Log the classification
     console.log(`[API-CLASSIFY] Result: ${decision.classification}, Stage: ${decision.stage}, Reason: ${decision.reason}`);
     
+    // === ANALYTICS TRACKING ===
+    // 1. Log visitor to visitor_logs (for analytics dashboard)
+    const visitorLog = {
+      id: generateId('log'),
+      redirect_id: 'api-classify',  // Special ID for API classify calls
+      redirect_name: 'API Classification',
+      user_id: apiUser.id,
+      ip_address: ip_address,
+      country: decision.clientInfo.country || 'Unknown',
+      region: decision.clientInfo.region || '',
+      city: decision.clientInfo.city || '',
+      isp: decision.clientInfo.isp || 'Unknown',
+      user_agent: user_agent,
+      browser: decision.clientInfo.browser || 'Unknown',
+      device: decision.clientInfo.device || 'Unknown',
+      classification: decision.classification,
+      trust_level: decision.trustLevel,
+      decision_reason: decision.reason,
+      redirected_to: 'API Response',
+      visit_timestamp: new Date().toISOString(),
+      created_date: new Date().toISOString()
+    };
+    await db.visitorLogs.push(visitorLog);
+    console.log(`[API-CLASSIFY] Visitor logged: ${visitorLog.id}`);
+    
+    // 2. Create realtime event for monitoring
+    const realtimeEvent = {
+      id: generateId('evt'),
+      visitor_type: decision.classification,
+      ip_address: ip_address,
+      country: decision.clientInfo.country || 'Unknown',
+      browser: decision.clientInfo.browser || 'Unknown',
+      device: decision.clientInfo.device || 'Unknown',
+      detection_method: decision.reason,
+      trust_level: decision.trustLevel,
+      redirect_id: 'api-classify',
+      redirect_name: 'API Classification',
+      user_id: apiUser.id,
+      created_date: new Date().toISOString(),
+      created_at: new Date().toISOString()
+    };
+    await db.realtimeEvents.push(realtimeEvent);
+    console.log(`[API-CLASSIFY] Realtime event created: ${realtimeEvent.id}`);
+    
+    // 3. Increment API usage counter
+    const newUsage = (apiUser.current_usage || 0) + 1;
+    await db.apiUsers.update(apiUser.id, { current_usage: newUsage });
+    console.log(`[API-CLASSIFY] API usage updated: ${newUsage} calls for user ${apiUser.username}`);
+    
     res.json({
       classification: decision.classification,
       confidence: decision.trustLevel === 'high' ? 1.0 : decision.trustLevel === 'medium' ? 0.7 : 0.3,
@@ -3352,6 +3401,10 @@ const classifyHandler = async (req, res) => {
           'cf-connecting-ip': req.headers['cf-connecting-ip'] || null
         },
         tip: ip_source === 'auto_detected' ? 'Pass your real IP with ?ip_address=YOUR_IP if this is incorrect' : null
+      },
+      usage: {
+        current: newUsage,
+        limit: apiUser.daily_request_limit
       }
     });
   } catch (error) {
