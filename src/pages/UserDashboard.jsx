@@ -275,11 +275,29 @@ export default function UserDashboard() {
                       <span>✓ {((apiUser?.daily_request_limit || 20000) / 1000).toFixed(0)}K requests/day</span>
                       <span>✓ Full bot detection</span>
                     </div>
-                    {(apiUser?.linkCounter?.remainingLinks !== undefined) && (
-                      <div className="mt-2 text-sm text-white/90">
-                        <span>{apiUser.linkCounter.remainingLinks} remaining</span>
+                    {/* Remaining Resources */}
+                    <div className="mt-3 grid grid-cols-2 gap-4">
+                      <div className="bg-white/10 rounded-lg p-3">
+                        <p className="text-xs text-white/70 mb-1">Links Remaining Today</p>
+                        <p className="text-lg font-bold">
+                          {Math.max(0, (apiUser?.daily_link_limit || 2) - (apiUser?.links_created_today || 0))} 
+                          <span className="text-sm font-normal text-white/70"> / {apiUser?.daily_link_limit || 2}</span>
+                        </p>
                       </div>
-                    )}
+                      <div className="bg-white/10 rounded-lg p-3">
+                        <p className="text-xs text-white/70 mb-1">API Requests Remaining Today</p>
+                        <p className="text-lg font-bold">
+                          {(() => {
+                            const remaining = Math.max(0, (apiUser?.daily_request_limit || 20000) - (apiUser?.current_usage || 0));
+                            if (remaining >= 1000) {
+                              return `${(remaining / 1000).toFixed(1)}K`;
+                            }
+                            return remaining.toLocaleString();
+                          })()}
+                          <span className="text-sm font-normal text-white/70"> / {((apiUser?.daily_request_limit || 20000) / 1000).toFixed(0)}K</span>
+                        </p>
+                      </div>
+                    </div>
                   </div>
                   {isExpired && (
                     <div className="mt-4">
