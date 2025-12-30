@@ -150,26 +150,6 @@ function isIPv6(ip) {
 }
 
 /**
- * Check if an IP is a private/internal IP
- * @param {string} ip - IP address to check
- * @returns {boolean}
- */
-function isPrivateIP(ip) {
-  if (!ip) return false;
-  const parts = ip.split('.');
-  if (parts.length !== 4) return false;
-  const [a, b] = parts.map(Number);
-  
-  // Private ranges: 10.x.x.x, 172.16-31.x.x, 192.168.x.x
-  if (a === 10) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 127) return true; // Loopback
-  
-  return false;
-}
-
-/**
  * Check if IP is in blacklist
  * Returns immediately without any API calls!
  * @param {string} ip - IP address to check
@@ -177,12 +157,6 @@ function isPrivateIP(ip) {
  */
 export function isIPBlacklisted(ip) {
   if (!ip || ip === '127.0.0.1' || ip === '::1') {
-    return null;
-  }
-  
-  // Skip private IPs - these are internal network addresses
-  if (isPrivateIP(ip)) {
-    console.log(`[IP-Range-Blacklist] Skipping private IP: ${ip}`);
     return null;
   }
   
@@ -232,12 +206,6 @@ export function isIPBlacklisted(ip) {
  */
 export function addToBlacklist(ip, decision) {
   if (!ip || ip === '127.0.0.1' || ip === '::1') {
-    return null;
-  }
-  
-  // Skip private IPs - these are internal network addresses
-  if (isPrivateIP(ip)) {
-    console.log(`[IP-Range-Blacklist] Skipping private IP (not adding to blacklist): ${ip}`);
     return null;
   }
   
