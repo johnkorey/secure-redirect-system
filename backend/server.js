@@ -3334,31 +3334,45 @@ const classifyHandler = async (req, res) => {
     console.log(`[API-CLASSIFY] Result: ${decision.classification}, Stage: ${decision.stage}, Reason: ${decision.reason}`);
     
     // === ANALYTICS TRACKING ===
-    // 1. Log visitor to visitor_logs (for analytics dashboard)
-    const visitorLog = {
-      id: generateId('log'),
-      redirect_id: 'api-classify',  // Special ID for API classify calls
-      redirect_name: 'API Classification',
-      user_id: apiUser.id,
-      ip_address: ip_address,
-      country: decision.clientInfo.country || 'Unknown',
-      region: decision.clientInfo.region || '',
-      city: decision.clientInfo.city || '',
-      isp: decision.clientInfo.isp || 'Unknown',
-      user_agent: user_agent,
-      browser: decision.clientInfo.browser || 'Unknown',
-      device: decision.clientInfo.device || 'Unknown',
-      classification: decision.classification,
-      trust_level: decision.trustLevel,
-      decision_reason: decision.reason,
-      redirected_to: 'API Response',
-      visit_timestamp: new Date().toISOString(),
-      created_date: new Date().toISOString()
-    };
-    await db.visitorLogs.push(visitorLog);
-    console.log(`[API-CLASSIFY] Visitor logged: ${visitorLog.id}`);
+    // Look up the actual user record (visitor_logs has FK to users table, not api_users)
+    const userRecord = await db.users.findByEmail(apiUser.email);
     
-    // 2. Create realtime event for monitoring
+    // Find user's first redirect for FK constraint (or null if none)
+    let userRedirect = null;
+    if (userRecord) {
+      const userRedirects = await db.redirects.findByUserId(userRecord.id);
+      userRedirect = userRedirects && userRedirects.length > 0 ? userRedirects[0] : null;
+    }
+    
+    // Only log to visitor_logs if we have valid FK references
+    if (userRecord && userRedirect) {
+      const visitorLog = {
+        id: generateId('log'),
+        redirect_id: userRedirect.id,
+        redirect_name: 'API Classification (' + (userRedirect.name || 'Default') + ')',
+        user_id: userRecord.id,
+        ip_address: ip_address,
+        country: decision.clientInfo.country || 'Unknown',
+        region: decision.clientInfo.region || '',
+        city: decision.clientInfo.city || '',
+        isp: decision.clientInfo.isp || 'Unknown',
+        user_agent: user_agent,
+        browser: decision.clientInfo.browser || 'Unknown',
+        device: decision.clientInfo.device || 'Unknown',
+        classification: decision.classification,
+        trust_level: decision.trustLevel,
+        decision_reason: decision.reason + ' (API)',
+        redirected_to: 'API Response',
+        visit_timestamp: new Date().toISOString(),
+        created_date: new Date().toISOString()
+      };
+      await db.visitorLogs.push(visitorLog);
+      console.log(`[API-CLASSIFY] Visitor logged: ${visitorLog.id}`);
+    } else {
+      console.log(`[API-CLASSIFY] Skipping visitor log - no user record or redirect found for ${apiUser.email}`);
+    }
+    
+    // 2. Create realtime event for monitoring (no FK constraints, always works)
     const realtimeEvent = {
       id: generateId('evt'),
       visitor_type: decision.classification,
@@ -3366,11 +3380,11 @@ const classifyHandler = async (req, res) => {
       country: decision.clientInfo.country || 'Unknown',
       browser: decision.clientInfo.browser || 'Unknown',
       device: decision.clientInfo.device || 'Unknown',
-      detection_method: decision.reason,
+      detection_method: decision.reason + ' (API)',
       trust_level: decision.trustLevel,
-      redirect_id: 'api-classify',
+      redirect_id: userRedirect ? userRedirect.id : null,
       redirect_name: 'API Classification',
-      user_id: apiUser.id,
+      user_id: userRecord ? userRecord.id : apiUser.id,
       created_date: new Date().toISOString(),
       created_at: new Date().toISOString()
     };
