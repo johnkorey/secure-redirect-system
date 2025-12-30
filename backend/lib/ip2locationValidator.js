@@ -123,6 +123,26 @@ function checkProxySignals(ipData) {
 }
 
 /**
+ * Check if an IP is a private/internal IP
+ * @param {string} ip - IP address to check
+ * @returns {boolean}
+ */
+function isPrivateIP(ip) {
+  if (!ip) return false;
+  const parts = ip.split('.');
+  if (parts.length !== 4) return false;
+  const [a, b] = parts.map(Number);
+  
+  // Private ranges: 10.x.x.x, 172.16-31.x.x, 192.168.x.x
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 127) return true; // Loopback
+  
+  return false;
+}
+
+/**
  * Validate IP using IP2Location rules
  * @param {string} ip - IP address to validate
  * @param {string} apiKey - IP2Location API key
@@ -147,6 +167,14 @@ export async function validateIP(ip, apiKey) {
       isConsumerPrivacyNetwork: false
     }
   };
+
+  // Skip private/internal IPs - treat as HUMAN
+  if (isPrivateIP(ip)) {
+    result.reason = 'PRIVATE_IP_ALLOWED';
+    result.details.country = 'Local Network';
+    console.log(`[IP2Location] Private IP detected (${ip}) - treating as HUMAN`);
+    return result;
+  }
 
   // Fetch IP2Location data
   const ipData = await fetchIP2LocationData(ip, apiKey);
