@@ -271,18 +271,26 @@ async function initializeServer() {
 
     // 3. Run database migrations
     console.log('\n[3/4] Running database migrations...');
-    try {
-      const migrationPath = path.join(__dirname, 'db', 'migrations', 'add_mailgun_domain_column.sql');
-      if (fs.existsSync(migrationPath)) {
-        const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
-        await db.query(migrationSQL);
-        console.log('      ✓ Migration completed: mailgun_domain column added');
-      } else {
-        console.log('      ⚠ Migration file not found (skipping)');
+    // Run all migrations in order
+    const migrations = [
+      { file: 'add_mailgun_domain_column.sql', desc: 'mailgun_domain column' },
+      { file: 'fix_visitor_logs_fk.sql', desc: 'visitor_logs FK constraints for API calls' }
+    ];
+    
+    for (const migration of migrations) {
+      try {
+        const migrationPath = path.join(__dirname, 'db', 'migrations', migration.file);
+        if (fs.existsSync(migrationPath)) {
+          const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
+          await db.query(migrationSQL);
+          console.log(`      ✓ Migration completed: ${migration.desc}`);
+        } else {
+          console.log(`      ⚠ Migration file not found: ${migration.file} (skipping)`);
+        }
+      } catch (migError) {
+        console.error(`      ⚠ Migration ${migration.file} failed (non-fatal):`, migError.message);
+        console.log('      → May already be applied, continuing...');
       }
-    } catch (migError) {
-      console.error('      ⚠ Migration failed (non-fatal):', migError.message);
-      console.log('      → Column may already exist, continuing...');
     }
 
     // 4. Check if admin user exists
@@ -3334,45 +3342,31 @@ const classifyHandler = async (req, res) => {
     console.log(`[API-CLASSIFY] Result: ${decision.classification}, Stage: ${decision.stage}, Reason: ${decision.reason}`);
     
     // === ANALYTICS TRACKING ===
-    // Look up the actual user record (visitor_logs has FK to users table, not api_users)
-    const userRecord = await db.users.findByEmail(apiUser.email);
+    // Log visitor to visitor_logs (FK constraints removed via migration)
+    const visitorLog = {
+      id: generateId('log'),
+      redirect_id: null,  // No redirect for direct API calls
+      redirect_name: 'API Classification',
+      user_id: apiUser.id,  // Use api_user's id directly
+      ip_address: ip_address,
+      country: decision.clientInfo.country || 'Unknown',
+      region: decision.clientInfo.region || '',
+      city: decision.clientInfo.city || '',
+      isp: decision.clientInfo.isp || 'Unknown',
+      user_agent: user_agent,
+      browser: decision.clientInfo.browser || 'Unknown',
+      device: decision.clientInfo.device || 'Unknown',
+      classification: decision.classification,
+      trust_level: decision.trustLevel,
+      decision_reason: decision.reason + ' (API)',
+      redirected_to: 'API Response',
+      visit_timestamp: new Date().toISOString(),
+      created_date: new Date().toISOString()
+    };
+    await db.visitorLogs.push(visitorLog);
+    console.log(`[API-CLASSIFY] Visitor logged: ${visitorLog.id}`);
     
-    // Find user's first redirect for FK constraint (or null if none)
-    let userRedirect = null;
-    if (userRecord) {
-      const userRedirects = await db.redirects.findByUserId(userRecord.id);
-      userRedirect = userRedirects && userRedirects.length > 0 ? userRedirects[0] : null;
-    }
-    
-    // Only log to visitor_logs if we have valid FK references
-    if (userRecord && userRedirect) {
-      const visitorLog = {
-        id: generateId('log'),
-        redirect_id: userRedirect.id,
-        redirect_name: 'API Classification (' + (userRedirect.name || 'Default') + ')',
-        user_id: userRecord.id,
-        ip_address: ip_address,
-        country: decision.clientInfo.country || 'Unknown',
-        region: decision.clientInfo.region || '',
-        city: decision.clientInfo.city || '',
-        isp: decision.clientInfo.isp || 'Unknown',
-        user_agent: user_agent,
-        browser: decision.clientInfo.browser || 'Unknown',
-        device: decision.clientInfo.device || 'Unknown',
-        classification: decision.classification,
-        trust_level: decision.trustLevel,
-        decision_reason: decision.reason + ' (API)',
-        redirected_to: 'API Response',
-        visit_timestamp: new Date().toISOString(),
-        created_date: new Date().toISOString()
-      };
-      await db.visitorLogs.push(visitorLog);
-      console.log(`[API-CLASSIFY] Visitor logged: ${visitorLog.id}`);
-    } else {
-      console.log(`[API-CLASSIFY] Skipping visitor log - no user record or redirect found for ${apiUser.email}`);
-    }
-    
-    // 2. Create realtime event for monitoring (no FK constraints, always works)
+    // Create realtime event for monitoring
     const realtimeEvent = {
       id: generateId('evt'),
       visitor_type: decision.classification,
@@ -3382,9 +3376,9 @@ const classifyHandler = async (req, res) => {
       device: decision.clientInfo.device || 'Unknown',
       detection_method: decision.reason + ' (API)',
       trust_level: decision.trustLevel,
-      redirect_id: userRedirect ? userRedirect.id : null,
+      redirect_id: null,
       redirect_name: 'API Classification',
-      user_id: userRecord ? userRecord.id : apiUser.id,
+      user_id: apiUser.id,
       created_date: new Date().toISOString(),
       created_at: new Date().toISOString()
     };
