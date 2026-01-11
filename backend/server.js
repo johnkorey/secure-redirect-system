@@ -37,6 +37,7 @@ const app = express();
 
 // Middleware
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Parse URL-encoded form data from PHP scripts
 app.use(cors({
   origin: true, // Allow all origins for external access
   credentials: true
