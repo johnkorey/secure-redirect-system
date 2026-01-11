@@ -14,43 +14,55 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // ==========================================
 // Database Connection Configuration
 // ==========================================
-// Supports both:
-// 1. DATABASE_URL (DigitalOcean/Heroku format)
-// 2. Individual env vars (DB_HOST, DB_PORT, etc.)
+// Supports:
+// 1. POSTGRES_URI / POSTGRES_CONNECTION_STRING (Zeabur format)
+// 2. DATABASE_URL (Heroku/DigitalOcean format)
+// 3. Individual env vars (POSTGRES_HOST or DB_HOST, etc.)
 
 let poolConfig;
 
-// Pool size - DigitalOcean Dev DB allows ~20-25 connections total
-// Balance between availability and not exhausting slots
+// Pool size configuration
 const POOL_SIZE = parseInt(process.env.DB_POOL_SIZE || '5');
 
-if (process.env.DATABASE_URL) {
-  // DigitalOcean App Platform / Heroku format
-  console.log('[PostgreSQL] Using DATABASE_URL connection string');
+// Check for connection string (Zeabur, Heroku, DigitalOcean)
+const connectionString = process.env.POSTGRES_URI || 
+                         process.env.POSTGRES_CONNECTION_STRING || 
+                         process.env.DATABASE_URL;
+
+// Determine SSL setting - default OFF for Zeabur, enable only if explicitly set
+const useSSL = process.env.DB_SSL === 'true';
+const sslConfig = useSSL ? { rejectUnauthorized: false } : false;
+
+if (connectionString) {
+  // Using connection string (Zeabur, Heroku, etc.)
+  console.log('[PostgreSQL] Using connection string');
+  
+  // Append sslmode=disable if not using SSL and not already in connection string
+  let finalConnectionString = connectionString;
+  if (!useSSL && !connectionString.includes('sslmode=')) {
+    finalConnectionString += connectionString.includes('?') ? '&sslmode=disable' : '?sslmode=disable';
+  }
+  
   poolConfig = {
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DB_SSL !== 'false' ? {
-      rejectUnauthorized: false // Required for managed databases
-    } : false,
-    max: POOL_SIZE,                    // Max connections in pool
-    min: 1,                            // Keep 1 connection warm
-    idleTimeoutMillis: 30000,          // Release idle connections after 30s
-    connectionTimeoutMillis: 60000,    // Wait up to 60s for connection (was 10s)
-    allowExitOnIdle: false,            // Keep pool alive
-    statement_timeout: 30000,          // Kill slow queries after 30s
+    connectionString: finalConnectionString,
+    ssl: sslConfig,
+    max: POOL_SIZE,
+    min: 1,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 60000,
+    allowExitOnIdle: false,
+    statement_timeout: 30000,
   };
 } else {
-  // Individual environment variables (local development)
+  // Individual environment variables (Zeabur or local development)
   console.log('[PostgreSQL] Using individual DB environment variables');
   poolConfig = {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432'),
-    database: process.env.DB_NAME || 'secure_redirect',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres',
-    ssl: process.env.DB_SSL === 'true' ? {
-      rejectUnauthorized: false
-    } : false,
+    host: process.env.POSTGRES_HOST || process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.POSTGRES_PORT || process.env.DB_PORT || '5432'),
+    database: process.env.POSTGRES_DATABASE || process.env.POSTGRES_DB || process.env.DB_NAME || 'secure_redirect',
+    user: process.env.POSTGRES_USER || process.env.POSTGRES_USERNAME || process.env.DB_USER || 'postgres',
+    password: process.env.POSTGRES_PASSWORD || process.env.PASSWORD || process.env.DB_PASSWORD || 'postgres',
+    ssl: sslConfig,
     max: POOL_SIZE,
     min: 1,
     idleTimeoutMillis: 30000,
@@ -228,14 +240,14 @@ async function flushRealtimeEvents() {
         `INSERT INTO realtime_events (
           id, visitor_type, ip_address, country, browser, device,
           detection_method, trust_level, redirect_id, redirect_name, user_id,
-          created_date, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          api_user_id, created_date, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT DO NOTHING`,
         [
           event.id, event.visitor_type, event.ip_address, event.country,
           event.browser, event.device, event.detection_method, event.trust_level,
           event.redirect_id, event.redirect_name, event.user_id,
-          event.created_date || new Date(), event.created_at || new Date()
+          event.api_user_id || null, event.created_date || new Date(), event.created_at || new Date()
         ]
       );
     }
@@ -655,6 +667,32 @@ export const apiUsers = {
     } finally {
       client.release();
       console.log('[ATOMIC-COUNTER] Database client released');
+    }
+  },
+
+  // Reset daily counters for all non-unlimited users (runs at midnight)
+  async resetDailyCounters() {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Reset counters for users who are NOT unlimited (access_type !== 'unlimited')
+      // and whose links_created_date is not today (hasn't been reset yet today)
+      const result = await query(
+        `UPDATE api_users 
+         SET links_created_today = 0, 
+             current_usage = 0,
+             links_created_date = $1
+         WHERE access_type != 'unlimited'
+         AND (links_created_date IS NULL OR links_created_date < $1)
+         RETURNING id, email, username`,
+        [today]
+      );
+      
+      console.log(`[DAILY-RESET] Reset counters for ${result.rowCount} users`);
+      return { success: true, resetCount: result.rowCount, users: result.rows };
+    } catch (error) {
+      console.error('[DAILY-RESET] Error resetting daily counters:', error);
+      return { success: false, error: error.message };
     }
   }
 };
@@ -1205,6 +1243,37 @@ export const systemConfigs = {
   async list() {
     const result = await query('SELECT * FROM system_configs ORDER BY config_key');
     return result.rows;
+  },
+
+  async get(key) {
+    const result = await query('SELECT * FROM system_configs WHERE config_key = $1', [key]);
+    return result.rows[0] || null;
+  },
+
+  async getByKey(key) {
+    const result = await query('SELECT * FROM system_configs WHERE config_key = $1', [key]);
+    return result.rows[0] || null;
+  },
+
+  async update(key, data) {
+    const result = await query(
+      `UPDATE system_configs
+       SET config_value = $1, updated_at = $2
+       WHERE config_key = $3
+       RETURNING *`,
+      [data.config_value, new Date(), key]
+    );
+    return result.rows[0];
+  },
+
+  async delete(key) {
+    await query('DELETE FROM system_configs WHERE config_key = $1', [key]);
+    return true;
+  },
+
+  async has(key) {
+    const result = await query('SELECT 1 FROM system_configs WHERE config_key = $1', [key]);
+    return result.rows.length > 0;
   }
 };
 
@@ -1528,16 +1597,186 @@ export const companionDomains = {
 };
 
 // ==========================================
-// HOSTED LINKS (Legacy compatibility)
+// REMOTE SERVERS
 // ==========================================
 
-export const hostedLinks = {
-  async list() {
-    return [];
+export const remoteServers = {
+  async create(server) {
+    const result = await query(
+      `INSERT INTO remote_servers (
+        id, user_id, name, domain, api_key, human_redirect_url, bot_redirect_url,
+        enable_bot_detection, enable_email_capture, status, is_verified,
+        notes, created_by, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      RETURNING *`,
+      [
+        server.id, server.user_id, server.name, server.domain, server.api_key,
+        server.human_redirect_url, server.bot_redirect_url,
+        server.enable_bot_detection !== false, server.enable_email_capture !== false,
+        server.status || 'active', server.is_verified || false,
+        server.notes, server.created_by, server.created_at || new Date()
+      ]
+    );
+    return result.rows[0];
   },
-  
-  async values() {
-    return [];
+
+  async get(id) {
+    const result = await query('SELECT * FROM remote_servers WHERE id = $1', [id]);
+    return result.rows[0] || null;
+  },
+
+  async getByUser(userId) {
+    const result = await query(
+      'SELECT * FROM remote_servers WHERE user_id = $1 ORDER BY created_at DESC',
+      [userId]
+    );
+    return result.rows;
+  },
+
+  async getByApiKey(apiKey) {
+    const result = await query('SELECT * FROM remote_servers WHERE api_key = $1', [apiKey]);
+    return result.rows[0] || null;
+  },
+
+  async getByDomain(domain) {
+    const result = await query('SELECT * FROM remote_servers WHERE domain = $1', [domain]);
+    return result.rows[0] || null;
+  },
+
+  async update(id, userId, updates) {
+    const fields = [];
+    const values = [];
+    let paramCount = 1;
+
+    Object.entries(updates).forEach(([key, value]) => {
+      fields.push(`${key} = $${paramCount}`);
+      values.push(value);
+      paramCount++;
+    });
+
+    values.push(id, userId);
+    const result = await query(
+      `UPDATE remote_servers SET ${fields.join(', ')} WHERE id = $${paramCount} AND user_id = $${paramCount + 1} RETURNING *`,
+      values
+    );
+    return result.rows[0];
+  },
+
+  async delete(id, userId) {
+    await query('DELETE FROM remote_servers WHERE id = $1 AND user_id = $2', [id, userId]);
+    return true;
+  },
+
+  async list() {
+    const result = await query('SELECT * FROM remote_servers ORDER BY created_at DESC');
+    return result.rows;
+  },
+
+  async listActive() {
+    const result = await query(
+      "SELECT * FROM remote_servers WHERE status = 'active' ORDER BY created_at DESC"
+    );
+    return result.rows;
+  },
+
+  async updateHeartbeat(id) {
+    const result = await query(
+      'UPDATE remote_servers SET last_heartbeat_at = $1 WHERE id = $2 RETURNING *',
+      [new Date(), id]
+    );
+    return result.rows[0];
+  },
+
+  async updateSync(id) {
+    const result = await query(
+      'UPDATE remote_servers SET last_sync_at = $1 WHERE id = $2 RETURNING *',
+      [new Date(), id]
+    );
+    return result.rows[0];
+  },
+
+  async incrementStats(id, classification) {
+    const field = classification === 'HUMAN' ? 'human_count' : 'bot_count';
+    const result = await query(
+      `UPDATE remote_servers
+       SET total_requests = total_requests + 1, ${field} = ${field} + 1
+       WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    return result.rows[0];
+  },
+
+  async regenerateApiKey(id, newApiKey) {
+    const result = await query(
+      'UPDATE remote_servers SET api_key = $1 WHERE id = $2 RETURNING *',
+      [newApiKey, id]
+    );
+    return result.rows[0];
+  }
+};
+
+// ==========================================
+// REMOTE SERVER LOGS
+// ==========================================
+
+export const remoteServerLogs = {
+  async create(log) {
+    const result = await query(
+      `INSERT INTO remote_server_logs (
+        id, remote_server_id, ip_address, country, city, user_agent,
+        browser, device, classification, decision_reason, redirected_to,
+        captured_email, visit_timestamp
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING *`,
+      [
+        log.id, log.remote_server_id, log.ip_address, log.country, log.city,
+        log.user_agent, log.browser, log.device, log.classification,
+        log.decision_reason, log.redirected_to, log.captured_email,
+        log.visit_timestamp || new Date()
+      ]
+    );
+    return result.rows[0];
+  },
+
+  async getByServer(serverId, limit = 100) {
+    const result = await query(
+      'SELECT * FROM remote_server_logs WHERE remote_server_id = $1 ORDER BY visit_timestamp DESC LIMIT $2',
+      [serverId, limit]
+    );
+    return result.rows;
+  },
+
+  async list(limit = 100) {
+    const result = await query(
+      `SELECT rsl.*, rs.name as server_name, rs.domain as server_domain
+       FROM remote_server_logs rsl
+       LEFT JOIN remote_servers rs ON rsl.remote_server_id = rs.id
+       ORDER BY rsl.visit_timestamp DESC LIMIT $1`,
+      [limit]
+    );
+    return result.rows;
+  },
+
+  async getStats(serverId) {
+    const result = await query(
+      `SELECT
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE classification = 'HUMAN') as humans,
+        COUNT(*) FILTER (WHERE classification = 'BOT') as bots,
+        COUNT(*) FILTER (WHERE captured_email IS NOT NULL) as emails_captured
+       FROM remote_server_logs WHERE remote_server_id = $1`,
+      [serverId]
+    );
+    return result.rows[0];
+  },
+
+  async cleanupOld(daysToKeep = 30) {
+    const cutoffDate = new Date(Date.now() - daysToKeep * 24 * 60 * 60 * 1000);
+    const result = await query(
+      'DELETE FROM remote_server_logs WHERE visit_timestamp < $1',
+      [cutoffDate]
+    );
+    return result.rowCount;
   }
 };
 
@@ -1567,6 +1806,7 @@ export default {
   ispConfigs,
   userAgentPatterns,
   ipCache,
-  hostedLinks,
+  remoteServers,
+  remoteServerLogs,
   stats
 };

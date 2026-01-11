@@ -363,6 +363,89 @@ CREATE INDEX IF NOT EXISTS idx_ip_cache_classification ON ip_cache(classificatio
 CREATE INDEX IF NOT EXISTS idx_ip_cache_hit_count ON ip_cache(hit_count DESC);
 
 -- ==========================================
+-- REMOTE SERVERS TABLE
+-- ==========================================
+-- Stores registered remote/satellite servers that fetch config from this central server
+
+CREATE TABLE IF NOT EXISTS remote_servers (
+  id VARCHAR(50) PRIMARY KEY,
+  user_id VARCHAR(50) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  domain VARCHAR(255) NOT NULL,
+  api_key VARCHAR(100) UNIQUE NOT NULL,
+
+  -- Configuration that this remote server will use
+  human_redirect_url TEXT,
+  bot_redirect_url TEXT,
+
+  -- Detection settings
+  enable_bot_detection BOOLEAN DEFAULT true,
+  enable_email_capture BOOLEAN DEFAULT true,
+
+  -- Status and tracking
+  status VARCHAR(50) DEFAULT 'active',
+  is_verified BOOLEAN DEFAULT false,
+  last_sync_at TIMESTAMP,
+  last_heartbeat_at TIMESTAMP,
+
+  -- Statistics
+  total_requests INTEGER DEFAULT 0,
+  human_count INTEGER DEFAULT 0,
+  bot_count INTEGER DEFAULT 0,
+
+  -- Metadata
+  notes TEXT,
+  created_by VARCHAR(50),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_remote_servers_api_key ON remote_servers(api_key);
+CREATE INDEX IF NOT EXISTS idx_remote_servers_domain ON remote_servers(domain);
+CREATE INDEX IF NOT EXISTS idx_remote_servers_status ON remote_servers(status);
+CREATE INDEX IF NOT EXISTS idx_remote_servers_user_id ON remote_servers(user_id);
+
+-- ==========================================
+-- REMOTE SERVER LOGS TABLE
+-- ==========================================
+-- Logs visits processed by remote servers (reported back to central)
+
+CREATE TABLE IF NOT EXISTS remote_server_logs (
+  id VARCHAR(50) PRIMARY KEY,
+  remote_server_id VARCHAR(50) NOT NULL,
+
+  -- Visitor info
+  ip_address VARCHAR(100),
+  country VARCHAR(100),
+  city VARCHAR(100),
+  user_agent TEXT,
+  browser VARCHAR(100),
+  device VARCHAR(100),
+
+  -- Classification
+  classification VARCHAR(50),
+  decision_reason VARCHAR(255),
+
+  -- Redirect info
+  redirected_to TEXT,
+
+  -- Captured email (if any)
+  captured_email VARCHAR(255),
+
+  -- Timing
+  visit_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (remote_server_id) REFERENCES remote_servers(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_remote_server_logs_server_id ON remote_server_logs(remote_server_id);
+CREATE INDEX IF NOT EXISTS idx_remote_server_logs_classification ON remote_server_logs(classification);
+CREATE INDEX IF NOT EXISTS idx_remote_server_logs_timestamp ON remote_server_logs(visit_timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_remote_server_logs_ip ON remote_server_logs(ip_address);
+
+-- ==========================================
 -- HELPER FUNCTIONS
 -- ==========================================
 
@@ -386,6 +469,13 @@ EXECUTE FUNCTION update_updated_at();
 DROP TRIGGER IF EXISTS trigger_domains_updated_at ON domains;
 CREATE TRIGGER trigger_domains_updated_at
 BEFORE UPDATE ON domains
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at();
+
+-- Trigger for remote_servers
+DROP TRIGGER IF EXISTS trigger_remote_servers_updated_at ON remote_servers;
+CREATE TRIGGER trigger_remote_servers_updated_at
+BEFORE UPDATE ON remote_servers
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at();
 

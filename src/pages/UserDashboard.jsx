@@ -6,12 +6,12 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Activity, Users, Bot, TrendingUp, Link2, Settings, Code, MessageSquare, LogOut, Calendar } from 'lucide-react';
+import { Activity, Users, Bot, TrendingUp, Settings, Code, LogOut, Calendar, CloudUpload } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import HostedLinksManager from '../components/user/HostedLinksManager';
 import ProfileSettings from '../components/user/ProfileSettings';
 import IntegrationScript from '../components/user/IntegrationScript';
+import CpanelDeploy from '../components/user/CpanelDeploy';
 import ChatWidget from '../components/ChatWidget';
 
 const COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#ef4444'];
@@ -196,10 +196,6 @@ export default function UserDashboard() {
               <Activity className="w-4 h-4" />
               Overview
             </TabsTrigger>
-            <TabsTrigger value="links" className="flex items-center gap-2">
-              <Link2 className="w-4 h-4" />
-              Hosted Links
-            </TabsTrigger>
             <TabsTrigger value="profile" className="flex items-center gap-2">
               <Settings className="w-4 h-4" />
               Profile
@@ -207,6 +203,10 @@ export default function UserDashboard() {
             <TabsTrigger value="integration" className="flex items-center gap-2">
               <Code className="w-4 h-4" />
               Integration
+            </TabsTrigger>
+            <TabsTrigger value="cpanel-deploy" className="flex items-center gap-2">
+              <CloudUpload className="w-4 h-4" />
+              cPanel Deploy
             </TabsTrigger>
           </TabsList>
 
@@ -487,11 +487,6 @@ export default function UserDashboard() {
             </Card>
           </TabsContent>
 
-          {/* Hosted Links Tab */}
-          <TabsContent value="links">
-            <HostedLinksManager apiUser={apiUser} />
-          </TabsContent>
-
           {/* Profile Tab */}
           <TabsContent value="profile">
             <ProfileSettings apiUser={apiUser} />
@@ -502,7 +497,11 @@ export default function UserDashboard() {
             <IntegrationScript apiUser={apiUser} />
           </TabsContent>
 
-          {/* Forum Tab */}
+          {/* cPanel Deploy Tab */}
+          <TabsContent value="cpanel-deploy">
+            <CpanelDeploy />
+          </TabsContent>
+
         </Tabs>
       </div>
 

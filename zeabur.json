@@ -2,6 +2,7 @@
   "build": {
     "type": "dockerfile",
     "dockerfile": "Dockerfile"
-  }
+  },
+  "start_command": "node backend/server.js"
 }
 

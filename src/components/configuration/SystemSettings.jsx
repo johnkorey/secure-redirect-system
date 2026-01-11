@@ -41,7 +41,7 @@ export default function SystemSettings() {
   const handleSave = (key, value, type) => {
     const existing = configs.find(c => c.config_key === key);
     if (existing) {
-      updateMutation.mutate({ id: existing.id, data: { config_value: value } });
+      updateMutation.mutate({ id: existing.config_key, data: { config_value: value } });
     } else {
       createMutation.mutate({ config_key: key, config_value: value, config_type: type });
     }

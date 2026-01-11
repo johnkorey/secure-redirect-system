@@ -10,16 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { AlertCircle, Key, Eye, EyeOff, CreditCard, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
-// Detect backend URL dynamically
-function getBackendUrl() {
-  if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL;
-  const hostname = window.location.hostname;
-  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-    return `http://${hostname}:3001`;
-  }
-  return '';
-}
-const API_URL = getBackendUrl();
+// Use relative URLs - backend serves frontend on same origin
+const API_URL = '';
 
 export default function ProfileSettings({ apiUser }) {
   const [showApiKey, setShowApiKey] = useState(false);

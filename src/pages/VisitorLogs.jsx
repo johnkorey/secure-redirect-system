@@ -8,16 +8,8 @@ import { Users, Bot, List, RefreshCw, Calendar } from 'lucide-react';
 import VisitorTable from '../components/visitors/VisitorTable';
 import { motion } from 'framer-motion';
 
-// Detect backend URL dynamically
-function getBackendUrl() {
-  if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL;
-  const hostname = window.location.hostname;
-  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-    return `http://${hostname}:3001`;
-  }
-  return '';
-}
-const BACKEND_URL = getBackendUrl();
+// Use relative URLs - backend serves frontend on same origin
+const BACKEND_URL = '';
 
 export default function VisitorLogs() {
   const [filter, setFilter] = useState('all');

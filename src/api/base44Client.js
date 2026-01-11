@@ -80,7 +80,6 @@ const ForumMessage = {
 const IPRange = createCrudEntity('/api/ip-ranges');
 const ISPConfig = createCrudEntity('/api/isp-config');
 const UserAgentPattern = createCrudEntity('/api/user-agent-patterns');
-const HostedLink = createCrudEntity('/api/hosted-links');
 
 const RealtimeEvent = {
   list: (sortBy, limit = 50) => apiFetch(`/api/realtime-events?limit=${limit}`),
@@ -140,7 +139,6 @@ export const base44 = {
     IPRange,
     ISPConfig,
     UserAgentPattern,
-    HostedLink,
     RealtimeEvent,
     SystemConfig,
     Stats,

@@ -1,0 +1,35 @@
+# Dependencies - will be installed fresh in Docker
+node_modules/
+backend/node_modules/
+
+# Build output - will be created during build
+dist/
+
+# Environment files - use Zeabur dashboard instead
+.env
+.env.*
+backend/.env
+backend/.env.*
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temp files
+*.tmp
+*.temp
+.cache/
+
+

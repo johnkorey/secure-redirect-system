@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev:all:*)",
+      "Bash(PGPASSWORD=eu47hwvg1d6PrpE0M9WXCt5l3a28IVZo psql:*)",
+      "Bash(taskkill:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(curl:*)",
+      "Bash(dir \"C:\\\\Users\\\\Administrator\\\\Desktop\\\\secure-redirect-system-master\\\\secure-redirect-system-master\\\\src\")",
+      "Bash(psql:*)",
+      "Bash(powershell -Command \"Get-Content ''C:\\\\Users\\\\ADMINI~1\\\\AppData\\\\Local\\\\Temp\\\\2\\\\claude\\\\C--Users-Administrator-Desktop-secure-redirect-system-master\\\\tasks\\\\bcc2737.output'' | Select-Object -Last 50\")",
+      "Bash(powershell -Command \"Get-Content ''C:\\\\Users\\\\Administrator\\\\Desktop\\\\secure-redirect-system-master\\\\secure-redirect-system-master\\\\backend\\\\.env'' | ForEach-Object { $_+ ''|END|'' }\")",
+      "Bash(node -e \"import\\(''pg''\\).then\\(pg => { const pool = new pg.default.Pool\\({host:''sjc1.clusters.zeabur.com'',port:21395,database:''zeabur'',user:''root'',password:''eu47hwvg1d6PrpE0M9WXCt5l3a28IVZo''}\\); pool.query\\(''SELECT COUNT\\(*\\) as total, COUNT\\(*\\) FILTER \\(WHERE classification = \\\\''HUMAN\\\\''\\) as humans, COUNT\\(*\\) FILTER \\(WHERE classification = \\\\''BOT\\\\''\\) as bots FROM visitor_logs''\\).then\\(r => { console.log\\(''Result:'', r.rows[0]\\); pool.end\\(\\); }\\).catch\\(e => console.error\\(''Error:'', e.message\\)\\); }\\)\")",
+      "Bash(node server.js:*)",
+      "Bash(powershell -Command \"Stop-Process -Id 17636 -Force\")",
+      "Bash(powershell:*)",
+      "Bash(node:*)",
+      "Bash(dir /b \"C:\\\\Users\\\\Administrator\\\\Desktop\\\\secure-redirect-system-master\")",
+      "Bash(tasklist:*)"
+    ]
+  }
+}

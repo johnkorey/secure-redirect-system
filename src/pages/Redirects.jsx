@@ -7,16 +7,8 @@ import RedirectForm from '../components/redirects/RedirectForm';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// Detect backend URL dynamically
-function getBackendUrl() {
-  if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL;
-  const hostname = window.location.hostname;
-  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-    return `http://${hostname}:3001`;
-  }
-  return '';
-}
-const BACKEND_URL = getBackendUrl();
+// Use relative URLs - backend serves frontend on same origin
+const BACKEND_URL = '';
 
 export default function Redirects() {
   const [showForm, setShowForm] = useState(false);

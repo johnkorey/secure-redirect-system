@@ -7,16 +7,8 @@ import { Label } from '@/components/ui/label';
 import { ArrowLeft, Copy, CheckCircle2, Loader2, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 
-// Detect backend URL dynamically
-function getBackendUrl() {
-  if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL;
-  const hostname = window.location.hostname;
-  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-    return `http://${hostname}:3001`;
-  }
-  return '';
-}
-const API_URL = getBackendUrl();
+// Use relative URLs - backend serves frontend on same origin
+const API_URL = '';
 
 const CRYPTO_OPTIONS = [
   { id: 'BTC', name: 'Bitcoin', color: 'bg-orange-500' },

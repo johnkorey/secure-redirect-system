@@ -2,17 +2,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Loader2, Shield, AlertCircle } from 'lucide-react';
 
-// Backend API URL
-// Detect backend URL dynamically
-function getBackendUrl() {
-  if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL;
-  const hostname = window.location.hostname;
-  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-    return `http://${hostname}:3001`;
-  }
-  return '';
-}
-const BACKEND_URL = getBackendUrl();
+// Use relative URLs - backend serves frontend on same origin
+const BACKEND_URL = '';
 
 export default function RedirectHandler() {
   const [isProcessing, setIsProcessing] = useState(true);

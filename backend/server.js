@@ -3,14 +3,8 @@
  * Full SaaS backend with user/admin authentication, classification, and management
  */
 
-// Load dotenv only in development (not needed in production - DigitalOcean provides env vars)
-if (process.env.NODE_ENV !== 'production') {
-  try {
-    await import('dotenv/config');
-  } catch (e) {
-    console.log('dotenv not available (production mode)');
-  }
-}
+// Load dotenv FIRST before any other imports (must be static import to run before module initialization)
+import 'dotenv/config';
 
 import express from 'express';
 import cors from 'cors';
@@ -33,9 +27,10 @@ import {
   generateVerificationCode 
 } from './lib/emailService.js';
 import db, { getCachedRedirect, invalidateRedirectCache, getQueueStats, startBatchFlushTimer, getPoolStats } from './lib/postgresDatabase.js';
+import { CpanelService, encryptPassword, decryptPassword, generateDeploymentScript } from './lib/cpanelService.js';
 
 // Configuration
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 const app = express();
@@ -274,7 +269,9 @@ async function initializeServer() {
     // Run all migrations in order
     const migrations = [
       { file: 'add_mailgun_domain_column.sql', desc: 'mailgun_domain column' },
-      { file: 'fix_visitor_logs_fk.sql', desc: 'visitor_logs FK constraints for API calls' }
+      { file: 'fix_visitor_logs_fk.sql', desc: 'visitor_logs FK constraints for API calls' },
+      { file: 'add_cpanel_folder_name.sql', desc: 'cpanel_deployments folder_name column' },
+      { file: 'multi_cpanel_support.sql', desc: 'multi-cPanel support - link domains to configs' }
     ];
     
     for (const migration of migrations) {
@@ -365,6 +362,15 @@ async function initializeServer() {
     }
 
     console.log('      ✓ Admin account ready');
+
+    // [5/5] Reset daily counters on startup (catch any missed midnight resets)
+    console.log('\n[5/5] Checking daily counter resets...');
+    const resetResult = await db.apiUsers.resetDailyCounters();
+    if (resetResult.success && resetResult.resetCount > 0) {
+      console.log(`      ✓ Reset daily counters for ${resetResult.resetCount} users`);
+    } else {
+      console.log('      ✓ All daily counters are up to date');
+    }
     
     const initTime = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log('\n' + '='.repeat(70));
@@ -1293,7 +1299,7 @@ app.delete('/api/api-users/:id', authMiddleware, adminMiddleware, async (req, re
 });
 
 // ==========================================
-// REDIRECTS / HOSTED LINKS
+// REDIRECTS
 // ==========================================
 
 app.get('/api/redirects', authMiddleware, requireActiveSubscription, async (req, res) => {
@@ -1430,33 +1436,6 @@ app.delete('/api/redirects/:id', authMiddleware, requireActiveSubscription, asyn
     return res.status(403).json({ error: 'Access denied' });
   }
   await db.redirects.delete(req.params.id);
-  res.status(204).send();
-});
-
-// Hosted Links (alias for user's redirect links)
-app.get('/api/hosted-links', authMiddleware, requireActiveSubscription, (req, res) => {
-  const links = Array.from(db.hostedLinks.values()).filter(l => l.user_id === req.user.id);
-  res.json(links);
-});
-
-app.post('/api/hosted-links', authMiddleware, requireActiveSubscription, (req, res) => {
-  const link = {
-    id: generateId('link'),
-    slug: Math.random().toString(36).substr(2, 8),
-    user_id: req.user.id,
-    ...req.body,
-    click_count: 0,
-    created_date: new Date().toISOString()
-  };
-  db.hostedLinks.set(link.id, link);
-  res.status(201).json(link);
-});
-
-app.delete('/api/hosted-links/:id', authMiddleware, requireActiveSubscription, (req, res) => {
-  const link = db.hostedLinks.get(req.params.id);
-  if (!link) return res.status(404).json({ error: 'Not found' });
-  if (link.user_id !== req.user.id) return res.status(403).json({ error: 'Access denied' });
-  db.hostedLinks.delete(req.params.id);
   res.status(204).send();
 });
 
@@ -1844,7 +1823,12 @@ app.get('/api/realtime-events', authMiddleware, async (req, res) => {
   const isAdmin = req.user.role === 'admin';
   let events = await db.realtimeEvents.getAll();
   if (!isAdmin) {
-    events = events.filter(e => e.user_id === req.user.id);
+    // Match on user_id (users table) OR api_user_id (api_users table)
+    // This handles events created with either ID format
+    events = events.filter(e =>
+      e.user_id === req.user.id ||
+      e.api_user_id === req.user.apiUserId
+    );
   }
   // Return all events (7-day retention is handled by database cleanup)
   res.json(events.reverse());
@@ -2570,6 +2554,30 @@ app.get('/api/debug/link-counter', authMiddleware, async (req, res) => {
 });
 
 // ==========================================
+// ADMIN - Manual Daily Counter Reset
+// ==========================================
+
+app.post('/api/admin/reset-daily-counters', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    console.log('[ADMIN] Manual daily counter reset triggered by:', req.user.email);
+    const result = await db.apiUsers.resetDailyCounters();
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: `Reset daily counters for ${result.resetCount} users`,
+        resetCount: result.resetCount
+      });
+    } else {
+      res.status(500).json({ error: result.error });
+    }
+  } catch (error) {
+    console.error('Admin reset daily counters error:', error);
+    res.status(500).json({ error: 'Failed to reset daily counters' });
+  }
+});
+
+// ==========================================
 // CONFIGURATION - System Config (Legacy)
 // ==========================================
 
@@ -2607,26 +2615,35 @@ app.post('/api/system-configs', authMiddleware, adminMiddleware, async (req, res
 });
 
 // Update a system config
-app.put('/api/system-configs/:id', authMiddleware, adminMiddleware, (req, res) => {
-  const config = db.systemConfigs.get(req.params.id);
-  if (!config) return res.status(404).json({ error: 'Config not found' });
-  
-  const updated = { 
-    ...config, 
-    ...req.body,
-    updated_at: new Date().toISOString()
-  };
-  db.systemConfigs.set(req.params.id, updated);
-  res.json(updated);
+app.put('/api/system-configs/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const config = await db.systemConfigs.get(req.params.id);
+    if (!config) return res.status(404).json({ error: 'Config not found' });
+
+    const updated = await db.systemConfigs.update(req.params.id, {
+      ...config,
+      ...req.body
+    });
+    res.json(updated);
+  } catch (error) {
+    console.error('[SYSTEM-CONFIG] Update error:', error.message);
+    res.status(500).json({ error: 'Failed to update config' });
+  }
 });
 
 // Delete a system config
-app.delete('/api/system-configs/:id', authMiddleware, adminMiddleware, (req, res) => {
-  if (!db.systemConfigs.has(req.params.id)) {
-    return res.status(404).json({ error: 'Config not found' });
+app.delete('/api/system-configs/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const exists = await db.systemConfigs.has(req.params.id);
+    if (!exists) {
+      return res.status(404).json({ error: 'Config not found' });
+    }
+    await db.systemConfigs.delete(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[SYSTEM-CONFIG] Delete error:', error.message);
+    res.status(500).json({ error: 'Failed to delete config' });
   }
-  db.systemConfigs.delete(req.params.id);
-  res.json({ success: true });
 });
 
 // Get IP2Location API key (internal helper endpoint for decision engine)
@@ -3825,17 +3842,7 @@ app.get('/r/:publicId', async (req, res) => {
 
   // HIGH-PERFORMANCE: Use cached redirect lookup (no DB hit if cached)
   let redirect = await getCachedRedirect(actualRedirectId);
-  
-  // Fallback to hosted links only if not in redirects cache (less common)
-  if (!redirect) {
-    try {
-      const hostedLinks = await db.hostedLinks.list();
-      redirect = hostedLinks.find(l => l.slug === actualRedirectId || l.id === actualRedirectId);
-    } catch (e) {
-      // Ignore hosted links lookup failure
-    }
-  }
-  
+
   if (!redirect) {
     console.log(`[REDIRECT] Not found in database: ${actualRedirectId}`);
     return res.status(404).send(`
@@ -4063,6 +4070,723 @@ app.get('/r/:publicId', async (req, res) => {
 });
 
 // ==========================================
+// CPANEL DEPLOYMENT API
+// ==========================================
+
+// --- ADMIN ENDPOINTS ---
+
+// Save cPanel configuration (ADMIN - creates admin-owned cPanels)
+// Add or update cPanel configuration (supports multiple cPanels)
+app.post('/api/cpanel/config', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { id, host, username, password } = req.body;
+
+    if (!host || !username || !password) {
+      return res.status(400).json({ error: 'Host, username, and password are required' });
+    }
+
+    // Encrypt password before storing
+    const encryptedPassword = encryptPassword(password);
+
+    // Generate new ID if not provided, otherwise update existing
+    const configId = id || generateId('cpanel');
+
+    await db.query(`
+      INSERT INTO cpanel_config (id, host, username, password_encrypted, owner_type, owner_id, updated_at)
+      VALUES ($1, $2, $3, $4, 'admin', NULL, NOW())
+      ON CONFLICT (id) DO UPDATE SET
+        host = $2,
+        username = $3,
+        password_encrypted = $4,
+        updated_at = NOW()
+    `, [configId, host, username, encryptedPassword]);
+
+    console.log(`[CPANEL] Config ${configId} saved by admin: ${req.user.email}`);
+    res.json({ success: true, message: 'cPanel configuration saved', id: configId });
+  } catch (error) {
+    console.error('[CPANEL] Error saving config:', error);
+    res.status(500).json({ error: 'Failed to save cPanel configuration' });
+  }
+});
+
+// Get ALL admin-owned cPanel configurations (masked passwords)
+app.get('/api/cpanel/config', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT * FROM cpanel_config WHERE owner_type = 'admin' OR owner_type IS NULL ORDER BY created_at"
+    );
+
+    const configs = result.rows.map(config => ({
+      id: config.id,
+      host: config.host,
+      username: config.username,
+      password: '********', // Masked
+      is_active: config.is_active,
+      last_verified_at: config.last_verified_at,
+      updated_at: config.updated_at
+    }));
+
+    res.json({ configs });
+  } catch (error) {
+    console.error('[CPANEL] Error getting configs:', error);
+    res.status(500).json({ error: 'Failed to get cPanel configurations' });
+  }
+});
+
+// Test cPanel connection (with config ID)
+app.post('/api/cpanel/test/:configId', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { configId } = req.params;
+    const result = await db.query('SELECT * FROM cpanel_config WHERE id = $1', [configId]);
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'cPanel configuration not found' });
+    }
+
+    const config = result.rows[0];
+    const password = decryptPassword(config.password_encrypted);
+
+    const cpanel = new CpanelService(config.host, config.username, password);
+    const testResult = await cpanel.testConnection();
+
+    if (testResult.success) {
+      // Update last verified timestamp
+      await db.query(
+        'UPDATE cpanel_config SET last_verified_at = NOW(), is_active = true WHERE id = $1',
+        [configId]
+      );
+    }
+
+    res.json(testResult);
+  } catch (error) {
+    console.error('[CPANEL] Test connection error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Fetch domains from a specific cPanel
+app.post('/api/cpanel/fetch-domains/:configId', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { configId } = req.params;
+    const result = await db.query('SELECT * FROM cpanel_config WHERE id = $1', [configId]);
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'cPanel configuration not found' });
+    }
+
+    const config = result.rows[0];
+    const password = decryptPassword(config.password_encrypted);
+
+    const cpanel = new CpanelService(config.host, config.username, password);
+    const domains = await cpanel.getDomainsWithRoots();
+
+    // Upsert domains into database with cpanel_config_id
+    for (const domain of domains) {
+      const domainId = generateId('cpdom');
+      await db.query(`
+        INSERT INTO cpanel_domains (id, domain, document_root, domain_type, cpanel_config_id)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (domain) DO UPDATE SET
+          document_root = $3,
+          domain_type = $4,
+          cpanel_config_id = $5
+      `, [domainId, domain.domain, domain.documentRoot, domain.type, configId]);
+    }
+
+    console.log(`[CPANEL] Fetched ${domains.length} domains for config ${configId}`);
+    res.json({ success: true, count: domains.length, domains });
+  } catch (error) {
+    console.error('[CPANEL] Fetch domains error:', error);
+    res.status(500).json({ error: 'Failed to fetch domains from cPanel' });
+  }
+});
+
+// List all cPanel domains (admin) - with config info
+app.get('/api/cpanel/domains', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT d.*, c.host as cpanel_host, c.username as cpanel_username
+      FROM cpanel_domains d
+      LEFT JOIN cpanel_config c ON d.cpanel_config_id = c.id
+      ORDER BY d.domain
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('[CPANEL] Error listing domains:', error);
+    res.status(500).json({ error: 'Failed to list domains' });
+  }
+});
+
+// Enable/disable domain for user deployment
+app.put('/api/cpanel/domains/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { is_enabled } = req.body;
+
+    await db.query(
+      'UPDATE cpanel_domains SET is_enabled = $1 WHERE id = $2',
+      [is_enabled, id]
+    );
+
+    console.log(`[CPANEL] Domain ${id} is_enabled set to ${is_enabled}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[CPANEL] Error updating domain:', error);
+    res.status(500).json({ error: 'Failed to update domain' });
+  }
+});
+
+// Delete a specific cPanel configuration
+app.delete('/api/cpanel/config/:configId', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { configId } = req.params;
+    await db.query('DELETE FROM cpanel_domains WHERE cpanel_config_id = $1', [configId]);
+    await db.query('DELETE FROM cpanel_config WHERE id = $1', [configId]);
+    console.log(`[CPANEL] Config deleted by admin: ${req.user.email}`);
+    res.json({ success: true, message: 'cPanel configuration removed' });
+  } catch (error) {
+    console.error('[CPANEL] Error deleting config:', error);
+    res.status(500).json({ error: 'Failed to delete configuration' });
+  }
+});
+
+// List all deployments (admin view)
+app.get('/api/cpanel/deployments', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT
+        d.*,
+        dom.domain,
+        dom.document_root,
+        u.email as user_email,
+        au.username
+      FROM cpanel_deployments d
+      JOIN cpanel_domains dom ON d.domain_id = dom.id
+      LEFT JOIN users u ON d.user_id = u.id
+      LEFT JOIN api_users au ON u.email = au.email
+      ORDER BY d.deployed_at DESC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('[CPANEL] Error listing deployments:', error);
+    res.status(500).json({ error: 'Failed to list deployments' });
+  }
+});
+
+// --- USER ENDPOINTS ---
+
+// ========== USER'S OWN cPANEL MANAGEMENT ==========
+
+// Add user's own cPanel configuration
+app.post('/api/cpanel/my-cpanels', authMiddleware, requireActiveSubscription, async (req, res) => {
+  try {
+    const { host, username, password } = req.body;
+
+    if (!host || !username || !password) {
+      return res.status(400).json({ error: 'Host, username, and password are required' });
+    }
+
+    // Encrypt password before storing
+    const encryptedPassword = encryptPassword(password);
+    const configId = generateId('ucpanel'); // 'ucpanel' prefix for user cPanels
+
+    await db.query(`
+      INSERT INTO cpanel_config (id, host, username, password_encrypted, owner_type, owner_id, updated_at)
+      VALUES ($1, $2, $3, $4, 'user', $5, NOW())
+    `, [configId, host, username, encryptedPassword, req.user.id]);
+
+    console.log(`[CPANEL] User cPanel ${configId} added by: ${req.user.email}`);
+    res.json({ success: true, message: 'cPanel added successfully', id: configId });
+  } catch (error) {
+    console.error('[CPANEL] Error saving user cPanel:', error);
+    res.status(500).json({ error: 'Failed to save cPanel configuration' });
+  }
+});
+
+// Get user's own cPanel configurations
+app.get('/api/cpanel/my-cpanels', authMiddleware, requireActiveSubscription, async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT * FROM cpanel_config WHERE owner_type = 'user' AND owner_id = $1 ORDER BY created_at",
+      [req.user.id]
+    );
+
+    const configs = result.rows.map(config => ({
+      id: config.id,
+      host: config.host,
+      username: config.username,
+      password: '********', // Masked
+      is_active: config.is_active,
+      last_verified_at: config.last_verified_at,
+      updated_at: config.updated_at
+    }));
+
+    res.json({ configs });
+  } catch (error) {
+    console.error('[CPANEL] Error getting user cPanels:', error);
+    res.status(500).json({ error: 'Failed to get cPanel configurations' });
+  }
+});
+
+// Test user's own cPanel connection
+app.post('/api/cpanel/my-cpanels/:configId/test', authMiddleware, requireActiveSubscription, async (req, res) => {
+  try {
+    const { configId } = req.params;
+    const result = await db.query(
+      "SELECT * FROM cpanel_config WHERE id = $1 AND owner_type = 'user' AND owner_id = $2",
+      [configId, req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'cPanel configuration not found' });
+    }
+
+    const config = result.rows[0];
+    const password = decryptPassword(config.password_encrypted);
+
+    const cpanel = new CpanelService(config.host, config.username, password);
+    const testResult = await cpanel.testConnection();
+
+    if (testResult.success) {
+      await db.query(
+        'UPDATE cpanel_config SET last_verified_at = NOW(), is_active = true WHERE id = $1',
+        [configId]
+      );
+    }
+
+    res.json(testResult);
+  } catch (error) {
+    console.error('[CPANEL] Test user cPanel error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Fetch domains from user's own cPanel
+app.post('/api/cpanel/my-cpanels/:configId/fetch-domains', authMiddleware, requireActiveSubscription, async (req, res) => {
+  try {
+    const { configId } = req.params;
+    const result = await db.query(
+      "SELECT * FROM cpanel_config WHERE id = $1 AND owner_type = 'user' AND owner_id = $2",
+      [configId, req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'cPanel configuration not found' });
+    }
+
+    const config = result.rows[0];
+    const password = decryptPassword(config.password_encrypted);
+
+    const cpanel = new CpanelService(config.host, config.username, password);
+    const domains = await cpanel.listDomains();
+
+    // Upsert domains with user's cpanel_config_id
+    for (const domain of domains) {
+      const domainId = `${configId}_${domain.domain.replace(/\./g, '_')}`;
+      await db.query(`
+        INSERT INTO cpanel_domains (id, domain, document_root, domain_type, cpanel_config_id, is_enabled)
+        VALUES ($1, $2, $3, $4, $5, true)
+        ON CONFLICT (id) DO UPDATE SET
+          document_root = $3,
+          domain_type = $4,
+          cpanel_config_id = $5,
+          is_enabled = true
+      `, [domainId, domain.domain, domain.documentroot, domain.type, configId]);
+    }
+
+    console.log(`[CPANEL] User fetched ${domains.length} domains from ${config.host}`);
+    res.json({ success: true, count: domains.length, domains });
+  } catch (error) {
+    console.error('[CPANEL] Fetch user domains error:', error);
+    res.status(500).json({ error: 'Failed to fetch domains: ' + error.message });
+  }
+});
+
+// Delete user's own cPanel configuration
+app.delete('/api/cpanel/my-cpanels/:configId', authMiddleware, requireActiveSubscription, async (req, res) => {
+  try {
+    const { configId } = req.params;
+
+    // Verify ownership
+    const configResult = await db.query(
+      "SELECT * FROM cpanel_config WHERE id = $1 AND owner_type = 'user' AND owner_id = $2",
+      [configId, req.user.id]
+    );
+
+    if (configResult.rows.length === 0) {
+      return res.status(404).json({ error: 'cPanel configuration not found' });
+    }
+
+    // Delete associated domains and deployments first
+    await db.query('DELETE FROM cpanel_deployments WHERE domain_id IN (SELECT id FROM cpanel_domains WHERE cpanel_config_id = $1)', [configId]);
+    await db.query('DELETE FROM cpanel_domains WHERE cpanel_config_id = $1', [configId]);
+    await db.query('DELETE FROM cpanel_config WHERE id = $1', [configId]);
+
+    console.log(`[CPANEL] User cPanel ${configId} deleted by: ${req.user.email}`);
+    res.json({ success: true, message: 'cPanel configuration removed' });
+  } catch (error) {
+    console.error('[CPANEL] Error deleting user cPanel:', error);
+    res.status(500).json({ error: 'Failed to delete configuration' });
+  }
+});
+
+// Get user's own domains (from their cPanels)
+app.get('/api/cpanel/my-cpanel-domains', authMiddleware, requireActiveSubscription, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT d.id, d.domain, d.domain_type, d.document_root, c.host as cpanel_host
+      FROM cpanel_domains d
+      JOIN cpanel_config c ON d.cpanel_config_id = c.id
+      WHERE c.owner_type = 'user' AND c.owner_id = $1
+      ORDER BY d.domain
+    `, [req.user.id]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('[CPANEL] Error getting user domains:', error);
+    res.status(500).json({ error: 'Failed to get domains' });
+  }
+});
+
+// ========== END USER cPANEL MANAGEMENT ==========
+
+// Get available domains for deployment (user) - includes admin-enabled domains
+app.get('/api/cpanel/available-domains', authMiddleware, requireActiveSubscription, async (req, res) => {
+  try {
+    // Get admin-enabled domains (these have daily limits)
+    const result = await db.query(`
+      SELECT d.id, d.domain, d.domain_type, 'admin' as source
+      FROM cpanel_domains d
+      JOIN cpanel_config c ON d.cpanel_config_id = c.id
+      WHERE d.is_enabled = true AND (c.owner_type = 'admin' OR c.owner_type IS NULL)
+      ORDER BY d.domain
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('[CPANEL] Error getting available domains:', error);
+    res.status(500).json({ error: 'Failed to get available domains' });
+  }
+});
+
+// Get user's deployments
+app.get('/api/cpanel/my-deployments', authMiddleware, requireActiveSubscription, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT
+        d.*,
+        dom.domain,
+        dom.document_root
+      FROM cpanel_deployments d
+      JOIN cpanel_domains dom ON d.domain_id = dom.id
+      WHERE d.user_id = $1 AND d.status = 'active'
+      ORDER BY d.deployed_at DESC
+    `, [req.user.id]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('[CPANEL] Error getting user deployments:', error);
+    res.status(500).json({ error: 'Failed to get deployments' });
+  }
+});
+
+// Get user's deployment limit info (for admin cPanels only - user's own cPanels are unlimited)
+app.get('/api/cpanel/deployment-limit', authMiddleware, requireActiveSubscription, async (req, res) => {
+  try {
+    // Get user's access_type from api_users
+    const apiUserResult = await db.query(
+      'SELECT cpanel_deploy_limit, access_type FROM api_users WHERE email = $1',
+      [req.user.email]
+    );
+
+    const accessType = apiUserResult.rows[0]?.access_type || 'free';
+
+    // Determine DAILY limit based on access_type (unlimited plans get 4/day, others get 2/day)
+    const unlimitedPlans = ['unlimited', 'unlimited_weekly', 'unlimited_monthly'];
+    const defaultLimit = unlimitedPlans.includes(accessType) ? 4 : 2;
+
+    // Use the higher of: explicit cpanel_deploy_limit or plan-based default
+    const explicitLimit = apiUserResult.rows[0]?.cpanel_deploy_limit || 0;
+    const limit = Math.max(explicitLimit, defaultLimit);
+
+    // Count deployments to ADMIN cPanels made TODAY (user's own cPanels are unlimited)
+    const countResult = await db.query(`
+      SELECT COUNT(*) as count FROM cpanel_deployments d
+      JOIN cpanel_domains dom ON d.domain_id = dom.id
+      JOIN cpanel_config c ON dom.cpanel_config_id = c.id
+      WHERE d.user_id = $1
+        AND DATE(d.deployed_at) = CURRENT_DATE
+        AND (c.owner_type = 'admin' OR c.owner_type IS NULL)
+    `, [req.user.id]);
+
+    const used = parseInt(countResult.rows[0]?.count || 0);
+
+    res.json({
+      limit,
+      used,
+      remaining: Math.max(0, limit - used),
+      canDeploy: used < limit,
+      isDaily: true,
+      note: 'This limit applies to admin cPanels only. Your own cPanels have no limit.'
+    });
+  } catch (error) {
+    console.error('[CPANEL] Error getting deployment limit:', error);
+    res.status(500).json({ error: 'Failed to get deployment limit' });
+  }
+});
+
+// Deploy script to cPanel domain
+app.post('/api/cpanel/deploy', authMiddleware, requireActiveSubscription, async (req, res) => {
+  try {
+    const { domain_id, human_redirect_url, bot_redirect_url } = req.body;
+
+    if (!domain_id || !human_redirect_url || !bot_redirect_url) {
+      return res.status(400).json({ error: 'Domain, human URL, and bot URL are required' });
+    }
+
+    // Check if domain is enabled
+    const domainResult = await db.query(
+      'SELECT * FROM cpanel_domains WHERE id = $1 AND is_enabled = true',
+      [domain_id]
+    );
+
+    if (domainResult.rows.length === 0) {
+      return res.status(400).json({ error: 'Domain not available for deployment' });
+    }
+
+    const domain = domainResult.rows[0];
+
+    // Get cPanel config for this domain FIRST to check ownership
+    const cpanelConfigId = domain.cpanel_config_id;
+    if (!cpanelConfigId) {
+      return res.status(400).json({ error: 'Domain not linked to a cPanel configuration. Please re-fetch domains.' });
+    }
+
+    const configResult = await db.query('SELECT * FROM cpanel_config WHERE id = $1', [cpanelConfigId]);
+    if (configResult.rows.length === 0) {
+      return res.status(500).json({ error: 'cPanel not configured' });
+    }
+
+    const config = configResult.rows[0];
+    const isUserOwnedCpanel = config.owner_type === 'user' && config.owner_id === req.user.id;
+    const isAdminCpanel = config.owner_type === 'admin' || config.owner_type === null;
+
+    // Verify user has access to this cPanel
+    if (config.owner_type === 'user' && config.owner_id !== req.user.id) {
+      return res.status(403).json({ error: 'You do not have access to this cPanel' });
+    }
+
+    // Only check daily limit for ADMIN cPanels - user's own cPanels are unlimited
+    if (isAdminCpanel) {
+      const apiUserResult = await db.query(
+        'SELECT cpanel_deploy_limit, access_type FROM api_users WHERE email = $1',
+        [req.user.email]
+      );
+
+      const accessType = apiUserResult.rows[0]?.access_type || 'free';
+      const unlimitedPlans = ['unlimited', 'unlimited_weekly', 'unlimited_monthly'];
+      const defaultLimit = unlimitedPlans.includes(accessType) ? 4 : 2;
+      const explicitLimit = apiUserResult.rows[0]?.cpanel_deploy_limit || 0;
+      const limit = Math.max(explicitLimit, defaultLimit);
+
+      // Count deployments to ADMIN cPanels made TODAY only
+      const countResult = await db.query(`
+        SELECT COUNT(*) as count FROM cpanel_deployments d
+        JOIN cpanel_domains dom ON d.domain_id = dom.id
+        JOIN cpanel_config c ON dom.cpanel_config_id = c.id
+        WHERE d.user_id = $1
+          AND DATE(d.deployed_at) = CURRENT_DATE
+          AND (c.owner_type = 'admin' OR c.owner_type IS NULL)
+      `, [req.user.id]);
+      const used = parseInt(countResult.rows[0]?.count || 0);
+
+      if (used >= limit) {
+        return res.status(403).json({
+          error: 'Daily deployment limit reached for admin cPanels. You can create more deployments tomorrow, or deploy to your own cPanel.',
+          limit,
+          used,
+          isDaily: true
+        });
+      }
+    }
+
+    // Multiple deployments to same domain are allowed - each gets a unique random folder
+    const password = decryptPassword(config.password_encrypted);
+
+    // Get user's API key for the script
+    const apiKeyResult = await db.query(
+      'SELECT api_key FROM api_users WHERE email = $1',
+      [req.user.email]
+    );
+    const userApiKey = apiKeyResult.rows[0]?.api_key;
+
+    if (!userApiKey) {
+      return res.status(400).json({ error: 'API key not found for user' });
+    }
+
+    // Generate PHP script
+    const centralServerUrl = `${req.protocol}://${req.get('host')}`;
+    const phpScript = generateDeploymentScript(
+      userApiKey,
+      centralServerUrl,
+      human_redirect_url,
+      bot_redirect_url
+    );
+
+    // Deploy to cPanel
+    const cpanel = new CpanelService(config.host, config.username, password);
+    const deployResult = await cpanel.deployRedirectScript(domain.document_root, phpScript);
+
+    // Save deployment record with folder name
+    const deploymentId = generateId('deploy');
+    const folderName = deployResult.folderName;
+    const deployedUrl = `https://${domain.domain}/${folderName}/`;
+
+    await db.query(`
+      INSERT INTO cpanel_deployments
+        (id, user_id, domain_id, deployed_url, human_redirect_url, bot_redirect_url, status, folder_name)
+      VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)
+    `, [deploymentId, req.user.id, domain_id, deployedUrl, human_redirect_url, bot_redirect_url, folderName]);
+
+    console.log(`[CPANEL] Deployed to ${domain.domain}/${folderName}/ by user ${req.user.email}`);
+
+    res.json({
+      success: true,
+      deployment: {
+        id: deploymentId,
+        domain: domain.domain,
+        deployed_url: deployedUrl,
+        folder_name: folderName,
+        human_redirect_url,
+        bot_redirect_url
+      }
+    });
+  } catch (error) {
+    console.error('[CPANEL] Deploy error:', error);
+    res.status(500).json({ error: 'Failed to deploy script: ' + error.message });
+  }
+});
+
+// Update deployment URLs
+app.put('/api/cpanel/deployments/:id', authMiddleware, requireActiveSubscription, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { human_redirect_url, bot_redirect_url } = req.body;
+
+    // Check ownership - include cpanel_config_id and folder_name
+    const deploymentResult = await db.query(
+      'SELECT d.*, dom.domain, dom.document_root, dom.cpanel_config_id FROM cpanel_deployments d JOIN cpanel_domains dom ON d.domain_id = dom.id WHERE d.id = $1',
+      [id]
+    );
+
+    if (deploymentResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Deployment not found' });
+    }
+
+    const deployment = deploymentResult.rows[0];
+
+    if (deployment.user_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Get the correct cPanel config for this domain
+    const configResult = await db.query('SELECT * FROM cpanel_config WHERE id = $1', [deployment.cpanel_config_id]);
+    if (configResult.rows.length === 0) {
+      return res.status(500).json({ error: 'cPanel configuration not found for this domain' });
+    }
+    const config = configResult.rows[0];
+    const password = decryptPassword(config.password_encrypted);
+
+    // Get user's API key
+    const apiKeyResult = await db.query(
+      'SELECT api_key FROM api_users WHERE email = $1',
+      [req.user.email]
+    );
+    const userApiKey = apiKeyResult.rows[0]?.api_key;
+
+    // Generate updated PHP script
+    const centralServerUrl = `${req.protocol}://${req.get('host')}`;
+    const phpScript = generateDeploymentScript(
+      userApiKey,
+      centralServerUrl,
+      human_redirect_url || deployment.human_redirect_url,
+      bot_redirect_url || deployment.bot_redirect_url
+    );
+
+    // Update on cPanel - write to the correct folder
+    const cpanel = new CpanelService(config.host, config.username, password);
+    const folderPath = deployment.folder_name
+      ? `${deployment.document_root}/${deployment.folder_name}`
+      : deployment.document_root;
+    const fileName = deployment.folder_name ? 'index.php' : 'redirect.php';
+    await cpanel.writeFile(folderPath, fileName, phpScript);
+
+    // Update database
+    await db.query(`
+      UPDATE cpanel_deployments
+      SET human_redirect_url = $1, bot_redirect_url = $2, updated_at = NOW()
+      WHERE id = $3
+    `, [human_redirect_url || deployment.human_redirect_url, bot_redirect_url || deployment.bot_redirect_url, id]);
+
+    console.log(`[CPANEL] Updated deployment ${id} by user ${req.user.email}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[CPANEL] Update deployment error:', error);
+    res.status(500).json({ error: 'Failed to update deployment' });
+  }
+});
+
+// Remove deployment
+app.delete('/api/cpanel/deployments/:id', authMiddleware, requireActiveSubscription, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check ownership - include cpanel_config_id
+    const deploymentResult = await db.query(
+      'SELECT d.*, dom.domain, dom.document_root, dom.cpanel_config_id FROM cpanel_deployments d JOIN cpanel_domains dom ON d.domain_id = dom.id WHERE d.id = $1',
+      [id]
+    );
+
+    if (deploymentResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Deployment not found' });
+    }
+
+    const deployment = deploymentResult.rows[0];
+
+    if (deployment.user_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Get cPanel config for this domain
+    const configResult = await db.query('SELECT * FROM cpanel_config WHERE id = $1', [deployment.cpanel_config_id]);
+    if (configResult.rows.length === 0) {
+      return res.status(500).json({ error: 'cPanel configuration not found for this domain' });
+    }
+    const config = configResult.rows[0];
+    const password = decryptPassword(config.password_encrypted);
+
+    // Try to remove from cPanel (pass folder_name for new deployments)
+    // If it fails (e.g., folder already deleted), still mark as removed in database
+    const cpanel = new CpanelService(config.host, config.username, password);
+    try {
+      await cpanel.removeRedirectScript(deployment.document_root, deployment.folder_name);
+      console.log(`[CPANEL] Removed deployment ${id} from ${deployment.domain}/${deployment.folder_name || ''} by user ${req.user.email}`);
+    } catch (cpanelError) {
+      // Log the error but continue - folder might already be deleted
+      console.log(`[CPANEL] Could not remove from cPanel (may already be deleted): ${cpanelError.message}`);
+    }
+
+    // Update status in database regardless of cPanel result
+    await db.query(
+      "UPDATE cpanel_deployments SET status = 'removed', updated_at = NOW() WHERE id = $1",
+      [id]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[CPANEL] Remove deployment error:', error);
+    res.status(500).json({ error: 'Failed to remove deployment' });
+  }
+});
+
+// ==========================================
 // SPA CATCH-ALL ROUTE (must be last)
 // ==========================================
 
@@ -4207,6 +4931,84 @@ initializeServer()
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
     // ==========================================
+    // DAILY COUNTER RESET (Midnight)
+    // ==========================================
+    // Reset daily counters for non-unlimited users at midnight
+    const scheduleDailyReset = () => {
+      const now = new Date();
+      const nextMidnight = new Date(now);
+      nextMidnight.setHours(0, 0, 0, 0);
+      nextMidnight.setDate(nextMidnight.getDate() + 1); // Always schedule for next midnight
+      
+      const msUntilMidnight = nextMidnight.getTime() - now.getTime();
+      
+      setTimeout(async () => {
+        try {
+          console.log('\n[DAILY-RESET] Starting daily counter reset at midnight...');
+          const result = await db.apiUsers.resetDailyCounters();
+          if (result.success) {
+            console.log(`[DAILY-RESET] Successfully reset counters for ${result.resetCount} users`);
+          } else {
+            console.error('[DAILY-RESET] Failed:', result.error);
+          }
+
+          // Cleanup expired cPanel deployments
+          try {
+            console.log('[DAILY-RESET] Checking for expired cPanel deployments...');
+            const expiredResult = await db.query(`
+              SELECT d.id, d.user_id, dom.domain, dom.document_root
+              FROM cpanel_deployments d
+              JOIN cpanel_domains dom ON d.domain_id = dom.id
+              JOIN users u ON d.user_id = u.id
+              JOIN api_users au ON u.email = au.email
+              WHERE d.status = 'active'
+                AND au.subscription_expiry < NOW()
+            `);
+
+            if (expiredResult.rows.length > 0) {
+              console.log(`[DAILY-RESET] Found ${expiredResult.rows.length} expired deployments to remove`);
+
+              // Get cPanel config
+              const configResult = await db.query('SELECT * FROM cpanel_config WHERE id = $1', ['main']);
+              if (configResult.rows.length > 0) {
+                const config = configResult.rows[0];
+                const password = decryptPassword(config.password_encrypted);
+                const cpanel = new CpanelService(config.host, config.username, password);
+
+                for (const deployment of expiredResult.rows) {
+                  try {
+                    await cpanel.removeRedirectScript(deployment.document_root);
+                    await db.query(
+                      "UPDATE cpanel_deployments SET status = 'removed', updated_at = NOW() WHERE id = $1",
+                      [deployment.id]
+                    );
+                    console.log(`[DAILY-RESET] Removed expired deployment from ${deployment.domain}`);
+                  } catch (err) {
+                    console.error(`[DAILY-RESET] Failed to remove deployment from ${deployment.domain}:`, err.message);
+                  }
+                }
+              }
+            } else {
+              console.log('[DAILY-RESET] No expired deployments found');
+            }
+          } catch (cpanelError) {
+            console.error('[DAILY-RESET] cPanel cleanup error:', cpanelError.message);
+          }
+        } catch (error) {
+          console.error('[DAILY-RESET] Error during daily reset:', error);
+        }
+
+        // Schedule next reset for tomorrow midnight
+        scheduleDailyReset();
+      }, msUntilMidnight);
+      
+      console.log(`[DAILY-RESET] Next daily counter reset scheduled for: ${nextMidnight.toLocaleString()}`);
+    };
+    
+    // Start the daily reset scheduler
+    scheduleDailyReset();
+
+    // ==========================================
     // AUTOMATIC CLEANUP CRON JOB
     // ==========================================
     // Run cleanup daily at 3 AM to remove visitor logs older than 7 days
@@ -4249,3 +5051,7 @@ initializeServer()
   });
 
 export default app;
+
+// restart
+// trigger
+// try again

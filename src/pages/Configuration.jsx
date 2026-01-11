@@ -6,6 +6,7 @@ import SystemSettings from '../components/configuration/SystemSettings';
 import DomainManager from '../components/configuration/DomainManager';
 import MailgunManager from '../components/configuration/MailgunManager';
 import IPCacheManager from '../components/configuration/IPCacheManager';
+import CpanelManager from '../components/configuration/CpanelManager';
 
 export default function Configuration() {
   return (
@@ -17,6 +18,7 @@ export default function Configuration() {
 
       <div className="grid grid-cols-1 gap-6">
         <SystemSettings />
+        <CpanelManager />
         <IPCacheManager />
         <DomainManager />
         <MailgunManager />
